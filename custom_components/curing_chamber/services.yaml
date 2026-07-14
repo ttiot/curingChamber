@@ -1,0 +1,150 @@
+start_program:
+  name: Start program
+  description: Start a drying program (preset or user-defined) on a chamber.
+  fields:
+    device_id:
+      name: Chamber
+      description: Target chamber device (optional if only one is configured).
+      selector:
+        device:
+          integration: curing_chamber
+    program_id:
+      name: Program id
+      description: Identifier of the program to start (e.g. saucisson_sec).
+      required: true
+      example: saucisson_sec
+      selector:
+        text:
+
+stop_program:
+  name: Stop program
+  description: Stop the running program on a chamber.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+
+pause_program:
+  name: Pause program
+  description: Pause the running program (freezes the phase clock).
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+
+resume_program:
+  name: Resume program
+  description: Resume a paused program.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+
+next_phase:
+  name: Next phase
+  description: Advance the program to its next phase immediately.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+
+set_targets:
+  name: Set manual targets
+  description: Set manual temperature/humidity targets (no program running).
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    temperature:
+      name: Temperature
+      description: Target temperature in °C (omit to leave unregulated).
+      selector:
+        number:
+          min: -10
+          max: 40
+          step: 0.5
+          unit_of_measurement: "°C"
+    humidity:
+      name: Humidity
+      description: Target relative humidity in % (omit to leave unregulated).
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+set_reference_weight:
+  name: Set reference weight
+  description: Tare/record the reference weight for weight-loss tracking.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    weight:
+      name: Weight
+      description: Reference weight (omit to read the current scale value).
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 1
+
+acknowledge_alert:
+  name: Acknowledge alerts
+  description: Acknowledge active alerts to silence reminders until they clear.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+
+create_program:
+  name: Create/update program
+  description: Create or update a user-defined program from a JSON object.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    program:
+      name: Program
+      description: Program definition (id, name, phases[...]).
+      required: true
+      example: >-
+        {"id": "my_coppa", "name": "My Coppa", "phases": [
+          {"name": "rest", "target_temp": 22, "target_humidity": 80,
+           "end_kind": "duration", "duration_hours": 24},
+          {"name": "drying", "target_temp": 13, "target_humidity": 75,
+           "end_kind": "weight_loss", "weight_loss_pct": 35, "duration_hours": 1344}]}
+      selector:
+        object:
+
+delete_program:
+  name: Delete program
+  description: Delete a user-defined program.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    program_id:
+      name: Program id
+      required: true
+      selector:
+        text:

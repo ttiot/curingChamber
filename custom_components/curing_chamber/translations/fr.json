@@ -1,0 +1,160 @@
+{
+  "title": "Séchoir à charcuterie",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Séchoir — capteurs",
+        "description": "Nommez la chambre et sélectionnez ses capteurs. La température et l'hygrométrie sont nécessaires pour réguler, mais l'intégration s'installe même sans (mode surveillance seule).",
+        "data": {
+          "name": "Nom",
+          "temp_sensor": "Capteur de température",
+          "humidity_sensor": "Capteur d'hygrométrie",
+          "temp_sensor_2": "Seconde sonde de température (optionnel)",
+          "humidity_sensor_2": "Seconde sonde d'hygrométrie (optionnel)",
+          "product_temp_sensor": "Température à cœur du produit (optionnel)",
+          "weight_sensor": "Capteur de poids / balance (optionnel)",
+          "co2_sensor": "Capteur CO₂ / qualité d'air (optionnel)",
+          "door_sensor": "Capteur d'ouverture de porte (optionnel)"
+        }
+      },
+      "actuators": {
+        "title": "Séchoir — actionneurs",
+        "description": "Sélectionnez les actionneurs dont vous disposez. Tous sont optionnels ; n'en configurez aucun pour la surveillance seule.",
+        "data": {
+          "cool_switch": "Froid (compresseur)",
+          "heat_switch": "Chauffage",
+          "humidify_switch": "Humidificateur",
+          "dehumidify_switch": "Déshumidificateur",
+          "fan_switch": "Ventilateur de brassage",
+          "vent_switch": "Renouvellement d'air / extraction"
+        }
+      },
+      "notifications": {
+        "title": "Séchoir — notifications",
+        "description": "Choisissez éventuellement des services de notification (ex. application mobile) pour les alertes. Des notifications persistantes sont toujours créées.",
+        "data": {
+          "notify_services": "Services de notification"
+        }
+      },
+      "food_safety": {
+        "title": "Avertissement sécurité alimentaire",
+        "description": "Cette intégration pilote l'environnement de la chambre mais ne garantit PAS la salubrité du produit. Elle ne mesure ni l'activité de l'eau (aw) ni le pH. L'hygiène, le salage correct (sel nitrité le cas échéant) et les recettes restent votre responsabilité. Validez pour acquitter et terminer."
+      }
+    },
+    "abort": {
+      "already_configured": "Cette chambre est déjà configurée."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options du séchoir",
+        "menu_options": {
+          "sensors": "Capteurs",
+          "actuators": "Actionneurs",
+          "regulation": "Régulation & sécurité",
+          "notifications": "Notifications"
+        }
+      },
+      "sensors": {
+        "title": "Capteurs",
+        "data": {
+          "temp_sensor": "Capteur de température",
+          "humidity_sensor": "Capteur d'hygrométrie",
+          "temp_sensor_2": "Seconde sonde de température",
+          "humidity_sensor_2": "Seconde sonde d'hygrométrie",
+          "product_temp_sensor": "Température à cœur du produit",
+          "weight_sensor": "Capteur de poids / balance",
+          "co2_sensor": "Capteur CO₂ / qualité d'air",
+          "door_sensor": "Capteur d'ouverture de porte"
+        }
+      },
+      "actuators": {
+        "title": "Actionneurs",
+        "data": {
+          "cool_switch": "Froid (compresseur)",
+          "heat_switch": "Chauffage",
+          "humidify_switch": "Humidificateur",
+          "dehumidify_switch": "Déshumidificateur",
+          "fan_switch": "Ventilateur de brassage",
+          "vent_switch": "Renouvellement d'air / extraction"
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "data": {
+          "notify_services": "Services de notification"
+        }
+      },
+      "regulation": {
+        "title": "Régulation & sécurité",
+        "description": "Hystérésis, protection du compresseur et limites de sécurité. Les valeurs par défaut sont raisonnables ; modifiez-les avec précaution.",
+        "data": {
+          "temp_deadband": "Bande morte température (±°C)",
+          "humidity_deadband": "Bande morte hygrométrie (±%HR)",
+          "cool_min_off": "Temps minimum OFF du froid (s)",
+          "cool_min_on": "Temps minimum ON du froid (s)",
+          "actuator_min_off": "Temps minimum OFF autres actionneurs (s)",
+          "actuator_min_on": "Temps minimum ON autres actionneurs (s)",
+          "startup_delay": "Délai anti-rebond au démarrage (s)",
+          "humidity_anti_oscillation": "Fenêtre anti-oscillation hygrométrie (s)",
+          "temp_abs_min": "Température minimale absolue (°C)",
+          "temp_abs_max": "Température maximale absolue (°C)",
+          "humidity_abs_min": "Hygrométrie minimale absolue (%HR)",
+          "humidity_abs_max": "Hygrométrie maximale absolue (%HR)",
+          "degraded_delay": "Délai d'entrée en mode dégradé (s)",
+          "degraded_reminder": "Intervalle de rappel des alertes (s)",
+          "door_open_alert_minutes": "Délai d'alerte porte ouverte (min)",
+          "sensor_stale_minutes": "Délai capteur figé (min)",
+          "tick_interval": "Intervalle de régulation (s)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "chamber_temperature": { "name": "Température" }
+    },
+    "humidifier": {
+      "chamber_humidity": { "name": "Hygrométrie" }
+    },
+    "sensor": {
+      "dew_point": { "name": "Point de rosée" },
+      "absolute_humidity": { "name": "Humidité absolue" },
+      "weight_loss": { "name": "Perte de poids" },
+      "drying_rate": { "name": "Vitesse de séchage" },
+      "phase": { "name": "Phase courante" },
+      "phase_remaining": { "name": "Temps restant de phase" },
+      "regulation_state": { "name": "État de régulation" },
+      "runtime_cool": { "name": "Temps de fonctionnement froid" },
+      "runtime_heat": { "name": "Temps de fonctionnement chauffage" },
+      "runtime_humidify": { "name": "Temps de fonctionnement humidificateur" },
+      "runtime_dehumidify": { "name": "Temps de fonctionnement déshumidificateur" },
+      "runtime_fan": { "name": "Temps de fonctionnement ventilateur" },
+      "runtime_vent": { "name": "Temps de fonctionnement ventilation" }
+    },
+    "binary_sensor": {
+      "manual_action_required": { "name": "Action manuelle requise" },
+      "out_of_range": { "name": "Alarme hors-plage" },
+      "sensor_fault": { "name": "Défaut capteur" },
+      "sensor_divergence": { "name": "Divergence des sondes" },
+      "door_open_too_long": { "name": "Porte ouverte trop longtemps" }
+    },
+    "switch": {
+      "regulation": { "name": "Régulation" },
+      "maintenance": { "name": "Mode maintenance" }
+    },
+    "select": {
+      "program": { "name": "Programme" }
+    },
+    "button": {
+      "next_phase": { "name": "Phase suivante" },
+      "set_reference_weight": { "name": "Définir le poids de référence" },
+      "acknowledge_alert": { "name": "Acquitter les alertes" }
+    },
+    "number": {
+      "manual_temperature": { "name": "Consigne manuelle de température" },
+      "manual_humidity": { "name": "Consigne manuelle d'hygrométrie" }
+    }
+  }
+}

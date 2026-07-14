@@ -41,15 +41,24 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["PLR2004", "S101"]
+# Translated notification sentences are data; keep them on one readable line.
+"custom_components/curing_chamber/messages.py" = ["E501"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = true
 warn_unused_ignores = true
+# Only the pure engines are strictly typed; the HA glue (parent package __init__,
+# coordinator, platforms) is pulled in as a followed import and silenced.
+follow_imports = "silent"
 files = [
     "custom_components/curing_chamber/regulation",
     "custom_components/curing_chamber/program",
 ]
+
+[[tool.mypy.overrides]]
+module = "homeassistant.*"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
