@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set manifest version from the release tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python - "$version" <<'PY'
+          import json, sys
+          path = "custom_components/curing_chamber/manifest.json"
+          data = json.load(open(path))
+          data["version"] = sys.argv[1]
+          json.dump(data, open(path, "w"), indent=2, ensure_ascii=False)
+          open(path, "a").write("\n")
+          PY
+
+      - name: Create integration zip
+        run: |
+          cd custom_components/curing_chamber
+          zip -r curing_chamber.zip . -x '*.pyc' -x '__pycache__/*'
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: custom_components/curing_chamber/curing_chamber.zip
