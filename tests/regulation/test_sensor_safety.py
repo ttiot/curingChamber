@@ -35,18 +35,14 @@ def test_frozen_sensor_detected_by_filter_triggers_safety() -> None:
     # Feed a constant reading; before the stale window it is valid.
     res = filt.update(18.0, now=0.0)
     assert res.valid is True
-    out = eng.tick(
-        RegulationInputs(temp=res.value, temp_valid=res.valid), cfg, PAST_STARTUP
-    )
+    out = eng.tick(RegulationInputs(temp=res.value, temp_valid=res.valid), cfg, PAST_STARTUP)
     assert out.safety_active is False
 
     # Same value 31 minutes later -> stale -> invalid.
     res = filt.update(18.0, now=1860.0)
     assert res.stale is True
     assert res.valid is False
-    out = eng.tick(
-        RegulationInputs(temp=res.value, temp_valid=res.valid), cfg, PAST_STARTUP + 1860
-    )
+    out = eng.tick(RegulationInputs(temp=res.value, temp_valid=res.valid), cfg, PAST_STARTUP + 1860)
     assert out.safety_active is True
     assert out.commands[Actuator.COOL] is False
 

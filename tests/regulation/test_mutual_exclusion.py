@@ -20,7 +20,9 @@ def _no_guard(*actuators: Actuator) -> dict[Actuator, ActuatorConfig]:
 
 def test_never_cool_and_heat_together() -> None:
     cfg = make_config(
-        Actuator.COOL, Actuator.HEAT, target_temp=13.0,
+        Actuator.COOL,
+        Actuator.HEAT,
+        target_temp=13.0,
         actuators=_no_guard(Actuator.COOL, Actuator.HEAT),
     )
     eng = RegulationEngine(start=0.0)
@@ -31,7 +33,9 @@ def test_never_cool_and_heat_together() -> None:
 
 def test_never_humidify_and_dehumidify_together() -> None:
     cfg = make_config(
-        Actuator.HUMIDIFY, Actuator.DEHUMIDIFY, target_humidity=75.0,
+        Actuator.HUMIDIFY,
+        Actuator.DEHUMIDIFY,
+        target_humidity=75.0,
         humidity_anti_oscillation=0.0,
         actuators=_no_guard(Actuator.HUMIDIFY, Actuator.DEHUMIDIFY),
     )
@@ -44,7 +48,9 @@ def test_never_humidify_and_dehumidify_together() -> None:
 def test_cooling_waits_for_heat_to_release() -> None:
     """Cool cannot start while heat is stuck ON by its own min_on guard."""
     cfg = make_config(
-        Actuator.COOL, Actuator.HEAT, target_temp=13.0,
+        Actuator.COOL,
+        Actuator.HEAT,
+        target_temp=13.0,
         actuators={
             Actuator.COOL: ActuatorConfig(present=True, min_on=0, min_off=0),
             Actuator.HEAT: ActuatorConfig(present=True, min_on=600, min_off=0),

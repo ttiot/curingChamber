@@ -21,21 +21,28 @@ PAST_STARTUP = 200.0
 def test_temperature_regulated_even_when_humidity_cannot_be_held() -> None:
     """Cool-only chamber: cooling runs; humidity has no actuator to correct it."""
     cfg = make_config(
-        Actuator.COOL, target_temp=13.0, target_humidity=75.0,
+        Actuator.COOL,
+        target_temp=13.0,
+        target_humidity=75.0,
         degraded_delay=900.0,
     )
     eng = RegulationEngine(start=0.0)
     out = eng.tick(
         RegulationInputs(temp=18.0, temp_valid=True, humidity=60.0, humidity_valid=True),
-        cfg, PAST_STARTUP,
+        cfg,
+        PAST_STARTUP,
     )
     assert out.commands[Actuator.COOL] is True  # temperature acted on
 
 
 def test_humidity_falls_to_degraded_mode_when_uncorrectable() -> None:
     cfg = make_config(
-        Actuator.COOL, target_temp=13.0, target_humidity=75.0,
-        humidity_deadband=3.0, degraded_band_factor=2.0, degraded_delay=900.0,
+        Actuator.COOL,
+        target_temp=13.0,
+        target_humidity=75.0,
+        humidity_deadband=3.0,
+        degraded_band_factor=2.0,
+        degraded_delay=900.0,
     )
     eng = RegulationEngine(start=0.0)
     inp = RegulationInputs(temp=13.0, temp_valid=True, humidity=60.0, humidity_valid=True)
@@ -52,7 +59,9 @@ def test_humidity_falls_to_degraded_mode_when_uncorrectable() -> None:
 
 def test_anti_oscillation_limits_humidity_flips() -> None:
     cfg = make_config(
-        Actuator.HUMIDIFY, target_humidity=75.0, humidity_deadband=3.0,
+        Actuator.HUMIDIFY,
+        target_humidity=75.0,
+        humidity_deadband=3.0,
         humidity_anti_oscillation=600.0,
         actuators={Actuator.HUMIDIFY: ActuatorConfig(present=True, min_on=0, min_off=0)},
     )

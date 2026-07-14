@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class Actuator(str, Enum):
+class Actuator(StrEnum):
     """The controllable actuators. All are optional in a given chamber."""
 
     COOL = "cool"
@@ -29,7 +29,7 @@ MUTUAL_EXCLUSION: tuple[tuple[Actuator, Actuator], ...] = (
 )
 
 
-class AlertLevel(str, Enum):
+class AlertLevel(StrEnum):
     """Severity of an alert (§8)."""
 
     INFO = "info"
@@ -37,7 +37,7 @@ class AlertLevel(str, Enum):
     CRITICAL = "critical"
 
 
-class AlertKey(str, Enum):
+class AlertKey(StrEnum):
     """Stable alert identifiers, mapped to translated messages."""
 
     SENSOR_FAULT_TEMP = "sensor_fault_temp"
@@ -59,7 +59,7 @@ class AlertKey(str, Enum):
     MANUAL_HUMIDITY_LOW = "manual_humidity_low"
 
 
-class ManualAction(str, Enum):
+class ManualAction(StrEnum):
     """Recommended manual action when a quantity cannot be corrected (§5 bis)."""
 
     NONE = "none"

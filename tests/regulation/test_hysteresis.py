@@ -31,7 +31,9 @@ def test_cool_stays_off_within_band() -> None:
 def test_cool_maintains_state_inside_band() -> None:
     """Once cooling, it keeps cooling until it drops below the lower band."""
     cfg = make_config(
-        Actuator.COOL, target_temp=13.0, temp_deadband=0.5,
+        Actuator.COOL,
+        target_temp=13.0,
+        temp_deadband=0.5,
         actuators={Actuator.COOL: ActuatorConfig(present=True, min_on=0, min_off=0)},
     )
     eng = RegulationEngine(start=0.0)

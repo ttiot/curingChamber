@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from custom_components.curing_chamber.regulation import derived
 from custom_components.curing_chamber.regulation.filters import (
     SensorFilter,
@@ -31,7 +30,9 @@ def test_absolute_humidity_positive_and_monotonic() -> None:
 def test_drying_rate() -> None:
     # Lose 1 % of a 1000 g reference in 12 h -> 2 %/day.
     rate = derived.drying_rate(
-        weight_now=990.0, weight_before=1000.0, reference_weight=1000.0,
+        weight_now=990.0,
+        weight_before=1000.0,
+        reference_weight=1000.0,
         elapsed_seconds=12 * 3600,
     )
     assert rate == pytest.approx(2.0, abs=0.01)

@@ -14,9 +14,13 @@ from .conftest import make_config
 
 def _cfg() -> object:
     return make_config(
-        Actuator.COOL, target_temp=13.0, target_humidity=75.0,
-        humidity_deadband=3.0, degraded_band_factor=2.0,
-        degraded_delay=900.0, degraded_reminder=7200.0,
+        Actuator.COOL,
+        target_temp=13.0,
+        target_humidity=75.0,
+        humidity_deadband=3.0,
+        degraded_band_factor=2.0,
+        degraded_delay=900.0,
+        degraded_reminder=7200.0,
     )
 
 
@@ -63,7 +67,10 @@ def test_acknowledge_silences_reminders() -> None:
 def test_no_degraded_when_actuator_available() -> None:
     """With a humidifier present, low humidity is correctable -> no manual alert."""
     cfg = make_config(
-        Actuator.COOL, Actuator.HUMIDIFY, target_temp=13.0, target_humidity=75.0,
+        Actuator.COOL,
+        Actuator.HUMIDIFY,
+        target_temp=13.0,
+        target_humidity=75.0,
         degraded_delay=900.0,
     )
     eng = RegulationEngine(start=0.0)

@@ -10,7 +10,6 @@ from __future__ import annotations
 from . import derived, filters
 from .degraded import ConditionEvent, SustainedCondition
 from .types import (
-    DECREASING,
     MUTUAL_EXCLUSION,
     Actuator,
     Alert,
@@ -77,7 +76,8 @@ class RegulationEngine:
         # Maintenance mode: everything off, no alerts at all (§7).
         if config.maintenance_mode:
             for actuator in self._configured(config):
-                self._command(actuator, False, config, now, decisions, "maintenance")
+                self._command(actuator, False, config, now, decisions, "maintenance", force=True)
+            out.commands = {a: self._state.get(a, False) for a in self._configured(config)}
             out.summary = "maintenance"
             out.decisions = decisions
             self._last_decisions = decisions
@@ -99,9 +99,7 @@ class RegulationEngine:
         self._air_quality_alert(out, inputs, config, now)
 
         regulation_off = not config.regulation_enabled
-        force_all_off = (
-            regulation_off or startup_blocking or sensor_fault or inputs.door_open
-        )
+        force_all_off = regulation_off or startup_blocking or sensor_fault or inputs.door_open
 
         if force_all_off:
             for actuator in self._configured(config):
@@ -118,11 +116,7 @@ class RegulationEngine:
             out.safety_active = sensor_fault or startup_blocking
             out.paused = inputs.door_open and not out.safety_active
             out.summary = (
-                "disabled"
-                if regulation_off
-                else "safety"
-                if out.safety_active
-                else "paused"
+                "disabled" if regulation_off else "safety" if out.safety_active else "paused"
             )
         else:
             self._regulate_temperature(out, inputs, config, now, decisions)
@@ -273,11 +267,7 @@ class RegulationEngine:
         now: float,
         decisions: list[Decision],
     ) -> None:
-        if (
-            config.target_humidity is None
-            or inputs.humidity is None
-            or not inputs.humidity_valid
-        ):
+        if config.target_humidity is None or inputs.humidity is None or not inputs.humidity_valid:
             for actuator in (Actuator.HUMIDIFY, Actuator.DEHUMIDIFY):
                 if config.has(actuator):
                     self._command(actuator, False, config, now, decisions, "no_target")
@@ -305,9 +295,7 @@ class RegulationEngine:
 
         # Anti-oscillation: no humidity actuator may flip more than once per window.
         want_hum = self._anti_oscillation(Actuator.HUMIDIFY, want_hum, now, config, decisions)
-        want_dehum = self._anti_oscillation(
-            Actuator.DEHUMIDIFY, want_dehum, now, config, decisions
-        )
+        want_dehum = self._anti_oscillation(Actuator.DEHUMIDIFY, want_dehum, now, config, decisions)
 
         if not want_hum and config.has(Actuator.HUMIDIFY):
             self._command(Actuator.HUMIDIFY, False, config, now, decisions, "humidity")
@@ -316,9 +304,7 @@ class RegulationEngine:
         if want_hum and not self._state.get(Actuator.DEHUMIDIFY):
             self._command(Actuator.HUMIDIFY, True, config, now, decisions, "humidifying")
         elif want_hum:
-            decisions.append(
-                Decision(Actuator.HUMIDIFY, True, "humidifying", "mutual_exclusion")
-            )
+            decisions.append(Decision(Actuator.HUMIDIFY, True, "humidifying", "mutual_exclusion"))
         if want_dehum and not self._state.get(Actuator.HUMIDIFY):
             self._command(Actuator.DEHUMIDIFY, True, config, now, decisions, "drying")
         elif want_dehum:
@@ -340,9 +326,7 @@ class RegulationEngine:
             and self._last_humidity_change is not None
             and (now - self._last_humidity_change) < config.humidity_anti_oscillation
         ):
-            decisions.append(
-                Decision(actuator, desired, "humidity", "anti_oscillation")
-            )
+            decisions.append(Decision(actuator, desired, "humidity", "anti_oscillation"))
             return current
         return desired
 
@@ -357,7 +341,8 @@ class RegulationEngine:
         decisions: list[Decision],
     ) -> None:
         active_regulation = any(
-            self._state.get(a) for a in (Actuator.COOL, Actuator.HEAT, Actuator.HUMIDIFY, Actuator.DEHUMIDIFY)
+            self._state.get(a)
+            for a in (Actuator.COOL, Actuator.HEAT, Actuator.HUMIDIFY, Actuator.DEHUMIDIFY)
         )
         if config.has(Actuator.FAN):
             if active_regulation:
@@ -369,9 +354,7 @@ class RegulationEngine:
         if config.has(Actuator.VENT):
             co2_high = inputs.co2 is not None and inputs.co2 >= config.co2_threshold
             periodic = self._duty_cycle(now, config.vent_period, config.vent_run)
-            self._command(
-                Actuator.VENT, co2_high or periodic, config, now, decisions, "vent"
-            )
+            self._command(Actuator.VENT, co2_high or periodic, config, now, decisions, "vent")
 
     def _duty_cycle(self, now: float, period: float, run: float) -> bool:
         if period <= 0 or run <= 0 or self._start is None:
@@ -395,12 +378,26 @@ class RegulationEngine:
             too_high = inputs.temp > config.target_temp + ext and not config.has(Actuator.COOL)
             too_low = inputs.temp < config.target_temp - ext and not config.has(Actuator.HEAT)
             self._handle(
-                out, AlertKey.MANUAL_TEMP_HIGH, AlertLevel.WARNING, too_high, now, onset,
-                remind, self._params(inputs.temp, config.target_temp), ManualAction.ADD_COOLING,
+                out,
+                AlertKey.MANUAL_TEMP_HIGH,
+                AlertLevel.WARNING,
+                too_high,
+                now,
+                onset,
+                remind,
+                self._params(inputs.temp, config.target_temp),
+                ManualAction.ADD_COOLING,
             )
             self._handle(
-                out, AlertKey.MANUAL_TEMP_LOW, AlertLevel.WARNING, too_low, now, onset,
-                remind, self._params(inputs.temp, config.target_temp), ManualAction.ADD_HEATING,
+                out,
+                AlertKey.MANUAL_TEMP_LOW,
+                AlertLevel.WARNING,
+                too_low,
+                now,
+                onset,
+                remind,
+                self._params(inputs.temp, config.target_temp),
+                ManualAction.ADD_HEATING,
             )
 
         if (
@@ -416,13 +413,25 @@ class RegulationEngine:
                 Actuator.HUMIDIFY
             )
             self._handle(
-                out, AlertKey.MANUAL_HUMIDITY_HIGH, AlertLevel.WARNING, too_high, now, onset,
-                remind, self._params(inputs.humidity, config.target_humidity),
+                out,
+                AlertKey.MANUAL_HUMIDITY_HIGH,
+                AlertLevel.WARNING,
+                too_high,
+                now,
+                onset,
+                remind,
+                self._params(inputs.humidity, config.target_humidity),
                 ManualAction.REMOVE_HUMIDITY,
             )
             self._handle(
-                out, AlertKey.MANUAL_HUMIDITY_LOW, AlertLevel.WARNING, too_low, now, onset,
-                remind, self._params(inputs.humidity, config.target_humidity),
+                out,
+                AlertKey.MANUAL_HUMIDITY_LOW,
+                AlertLevel.WARNING,
+                too_low,
+                now,
+                onset,
+                remind,
+                self._params(inputs.humidity, config.target_humidity),
                 ManualAction.ADD_HUMIDITY,
             )
 
@@ -468,72 +477,136 @@ class RegulationEngine:
             out.alerts.append(Alert(key, level, params, manual, resolved=True))
 
     def _sensor_fault_alerts(
-        self, out: RegulationOutputs, temp_bad: bool, humidity_bad: bool,
-        config: RegulationConfig, now: float,
+        self,
+        out: RegulationOutputs,
+        temp_bad: bool,
+        humidity_bad: bool,
+        config: RegulationConfig,
+        now: float,
     ) -> None:
         self._handle(
-            out, AlertKey.SENSOR_FAULT_TEMP, AlertLevel.CRITICAL, temp_bad, now, 0.0,
-            config.degraded_reminder, {},
+            out,
+            AlertKey.SENSOR_FAULT_TEMP,
+            AlertLevel.CRITICAL,
+            temp_bad,
+            now,
+            0.0,
+            config.degraded_reminder,
+            {},
         )
         self._handle(
-            out, AlertKey.SENSOR_FAULT_HUMIDITY, AlertLevel.CRITICAL, humidity_bad, now, 0.0,
-            config.degraded_reminder, {},
+            out,
+            AlertKey.SENSOR_FAULT_HUMIDITY,
+            AlertLevel.CRITICAL,
+            humidity_bad,
+            now,
+            0.0,
+            config.degraded_reminder,
+            {},
         )
 
     def _divergence_alerts(
-        self, out: RegulationOutputs, inputs: RegulationInputs, config: RegulationConfig,
+        self,
+        out: RegulationOutputs,
+        inputs: RegulationInputs,
+        config: RegulationConfig,
         now: float,
     ) -> None:
         t_div = filters.divergence(list(inputs.temp_probes))
         h_div = filters.divergence(list(inputs.humidity_probes))
         self._handle(
-            out, AlertKey.SENSOR_DIVERGENCE_TEMP, AlertLevel.WARNING,
+            out,
+            AlertKey.SENSOR_DIVERGENCE_TEMP,
+            AlertLevel.WARNING,
             len(inputs.temp_probes) >= 2 and t_div > config.sensor_divergence_temp,
-            now, 0.0, config.degraded_reminder, {"value": round(t_div, 1)},
+            now,
+            0.0,
+            config.degraded_reminder,
+            {"value": round(t_div, 1)},
         )
         self._handle(
-            out, AlertKey.SENSOR_DIVERGENCE_HUMIDITY, AlertLevel.WARNING,
+            out,
+            AlertKey.SENSOR_DIVERGENCE_HUMIDITY,
+            AlertLevel.WARNING,
             len(inputs.humidity_probes) >= 2 and h_div > config.sensor_divergence_humidity,
-            now, 0.0, config.degraded_reminder, {"value": round(h_div, 1)},
+            now,
+            0.0,
+            config.degraded_reminder,
+            {"value": round(h_div, 1)},
         )
 
     def _door_alert(
-        self, out: RegulationOutputs, inputs: RegulationInputs, config: RegulationConfig,
+        self,
+        out: RegulationOutputs,
+        inputs: RegulationInputs,
+        config: RegulationConfig,
         now: float,
     ) -> None:
         self._handle(
-            out, AlertKey.DOOR_OPEN_TOO_LONG, AlertLevel.WARNING, inputs.door_open, now,
-            config.door_open_alert_seconds, config.degraded_reminder, {},
+            out,
+            AlertKey.DOOR_OPEN_TOO_LONG,
+            AlertLevel.WARNING,
+            inputs.door_open,
+            now,
+            config.door_open_alert_seconds,
+            config.degraded_reminder,
+            {},
         )
 
     def _absolute_limit_alerts(
-        self, out: RegulationOutputs, inputs: RegulationInputs, config: RegulationConfig,
+        self,
+        out: RegulationOutputs,
+        inputs: RegulationInputs,
+        config: RegulationConfig,
         now: float,
     ) -> None:
         t, h = inputs.temp, inputs.humidity
         self._handle(
-            out, AlertKey.ABS_LIMIT_TEMP_HIGH, AlertLevel.CRITICAL,
-            t is not None and inputs.temp_valid and t >= config.temp_abs_max, now, 0.0,
-            config.degraded_reminder, {"value": round(t, 1) if t is not None else 0},
+            out,
+            AlertKey.ABS_LIMIT_TEMP_HIGH,
+            AlertLevel.CRITICAL,
+            t is not None and inputs.temp_valid and t >= config.temp_abs_max,
+            now,
+            0.0,
+            config.degraded_reminder,
+            {"value": round(t, 1) if t is not None else 0},
         )
         self._handle(
-            out, AlertKey.ABS_LIMIT_TEMP_LOW, AlertLevel.CRITICAL,
-            t is not None and inputs.temp_valid and t <= config.temp_abs_min, now, 0.0,
-            config.degraded_reminder, {"value": round(t, 1) if t is not None else 0},
+            out,
+            AlertKey.ABS_LIMIT_TEMP_LOW,
+            AlertLevel.CRITICAL,
+            t is not None and inputs.temp_valid and t <= config.temp_abs_min,
+            now,
+            0.0,
+            config.degraded_reminder,
+            {"value": round(t, 1) if t is not None else 0},
         )
         self._handle(
-            out, AlertKey.ABS_LIMIT_HUMIDITY_HIGH, AlertLevel.CRITICAL,
-            h is not None and inputs.humidity_valid and h >= config.humidity_abs_max, now, 0.0,
-            config.degraded_reminder, {"value": round(h, 1) if h is not None else 0},
+            out,
+            AlertKey.ABS_LIMIT_HUMIDITY_HIGH,
+            AlertLevel.CRITICAL,
+            h is not None and inputs.humidity_valid and h >= config.humidity_abs_max,
+            now,
+            0.0,
+            config.degraded_reminder,
+            {"value": round(h, 1) if h is not None else 0},
         )
         self._handle(
-            out, AlertKey.ABS_LIMIT_HUMIDITY_LOW, AlertLevel.CRITICAL,
-            h is not None and inputs.humidity_valid and h <= config.humidity_abs_min, now, 0.0,
-            config.degraded_reminder, {"value": round(h, 1) if h is not None else 0},
+            out,
+            AlertKey.ABS_LIMIT_HUMIDITY_LOW,
+            AlertLevel.CRITICAL,
+            h is not None and inputs.humidity_valid and h <= config.humidity_abs_min,
+            now,
+            0.0,
+            config.degraded_reminder,
+            {"value": round(h, 1) if h is not None else 0},
         )
 
     def _quality_alerts(
-        self, out: RegulationOutputs, inputs: RegulationInputs, config: RegulationConfig,
+        self,
+        out: RegulationOutputs,
+        inputs: RegulationInputs,
+        config: RegulationConfig,
         now: float,
     ) -> None:
         # High temperature during drying (§5 health risk).
@@ -544,20 +617,34 @@ class RegulationEngine:
             and inputs.temp > config.high_temp_drying_limit
         )
         self._handle(
-            out, AlertKey.HIGH_TEMP_DRYING, AlertLevel.CRITICAL, high_temp, now,
-            config.high_temp_drying_duration, config.degraded_reminder,
+            out,
+            AlertKey.HIGH_TEMP_DRYING,
+            AlertLevel.CRITICAL,
+            high_temp,
+            now,
+            config.high_temp_drying_duration,
+            config.degraded_reminder,
             self._params(inputs.temp, config.high_temp_drying_limit),
         )
 
         # Case hardening: humidity durably below band, or drying too fast.
         hardening = False
-        if config.target_humidity is not None and inputs.humidity is not None and inputs.humidity_valid:
+        if (
+            config.target_humidity is not None
+            and inputs.humidity is not None
+            and inputs.humidity_valid
+        ):
             hardening = inputs.humidity < config.target_humidity - config.humidity_deadband
         if inputs.drying_rate is not None and inputs.drying_rate > config.case_hardening_rate:
             hardening = True
         self._handle(
-            out, AlertKey.CASE_HARDENING, AlertLevel.WARNING, hardening, now,
-            config.degraded_delay, config.degraded_reminder,
+            out,
+            AlertKey.CASE_HARDENING,
+            AlertLevel.WARNING,
+            hardening,
+            now,
+            config.degraded_delay,
+            config.degraded_reminder,
             {"rate": round(inputs.drying_rate, 2)} if inputs.drying_rate is not None else {},
         )
 
@@ -572,12 +659,21 @@ class RegulationEngine:
             dp = derived.dew_point(inputs.temp, inputs.humidity)
             condensation = (inputs.temp - dp) < config.condensation_margin
         self._handle(
-            out, AlertKey.CONDENSATION_RISK, AlertLevel.WARNING, condensation, now, 0.0,
-            config.degraded_reminder, {},
+            out,
+            AlertKey.CONDENSATION_RISK,
+            AlertLevel.WARNING,
+            condensation,
+            now,
+            0.0,
+            config.degraded_reminder,
+            {},
         )
 
     def _air_quality_alert(
-        self, out: RegulationOutputs, inputs: RegulationInputs, config: RegulationConfig,
+        self,
+        out: RegulationOutputs,
+        inputs: RegulationInputs,
+        config: RegulationConfig,
         now: float,
     ) -> None:
         # Only when there is no vent actuator to act automatically.
@@ -587,7 +683,12 @@ class RegulationEngine:
             and inputs.co2 >= config.co2_threshold
         )
         self._handle(
-            out, AlertKey.AIR_QUALITY, AlertLevel.WARNING, active, now, 0.0,
+            out,
+            AlertKey.AIR_QUALITY,
+            AlertLevel.WARNING,
+            active,
+            now,
+            0.0,
             config.degraded_reminder,
             {"value": round(inputs.co2, 0)} if inputs.co2 is not None else {},
             ManualAction.VENTILATE,

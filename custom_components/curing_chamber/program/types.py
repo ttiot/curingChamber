@@ -1,0 +1,181 @@
+"""Data types for the drying-program engine."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+
+
+class EndKind(StrEnum):
+    """How a phase ends."""
+
+    DURATION = "duration"
+    WEIGHT_LOSS = "weight_loss"
+    MANUAL = "manual"
+
+
+class OnComplete(StrEnum):
+    """What to do when the whole program finishes."""
+
+    HOLD_LAST = "hold_last"
+    STOP = "stop"
+
+
+class ProgramStatus(StrEnum):
+    """Runtime status of the program engine."""
+
+    IDLE = "idle"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+
+
+class ProgramEventType(StrEnum):
+    """Events emitted by the engine for the HA bus / notifications."""
+
+    PHASE_STARTED = "phase_started"
+    PHASE_ENDED = "phase_ended"
+    PROGRAM_COMPLETED = "program_completed"
+
+
+@dataclass(frozen=True)
+class Phase:
+    """One phase of a drying program.
+
+    A phase may regulate temperature only, humidity only, or both. The end
+    condition is one of duration / weight loss / manual; ``duration_hours`` also
+    acts as a safety cap for a ``WEIGHT_LOSS`` phase (the "~N weeks" fallback
+    used by the presets, and the fallback when no scale is available).
+    """
+
+    name: str
+    target_temp: float | None = None
+    target_humidity: float | None = None
+    end_kind: EndKind = EndKind.DURATION
+    duration_hours: float | None = None
+    weight_loss_pct: float | None = None
+    notify_end: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "target_temp": self.target_temp,
+            "target_humidity": self.target_humidity,
+            "end_kind": self.end_kind.value,
+            "duration_hours": self.duration_hours,
+            "weight_loss_pct": self.weight_loss_pct,
+            "notify_end": self.notify_end,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> Phase:
+        return cls(
+            name=str(data["name"]),
+            target_temp=_opt_float(data.get("target_temp")),
+            target_humidity=_opt_float(data.get("target_humidity")),
+            end_kind=EndKind(str(data.get("end_kind", "duration"))),
+            duration_hours=_opt_float(data.get("duration_hours")),
+            weight_loss_pct=_opt_float(data.get("weight_loss_pct")),
+            notify_end=bool(data.get("notify_end", True)),
+        )
+
+
+@dataclass(frozen=True)
+class Program:
+    """An ordered sequence of phases."""
+
+    id: str
+    name: str
+    phases: tuple[Phase, ...]
+    on_complete: OnComplete = OnComplete.HOLD_LAST
+    builtin: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "phases": [p.to_dict() for p in self.phases],
+            "on_complete": self.on_complete.value,
+            "builtin": self.builtin,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> Program:
+        raw_phases = data.get("phases", [])
+        phases_iter = raw_phases if isinstance(raw_phases, list) else []
+        phases = tuple(Phase.from_dict(_as_mapping(p)) for p in phases_iter)
+        return cls(
+            id=str(data["id"]),
+            name=str(data["name"]),
+            phases=phases,
+            on_complete=OnComplete(str(data.get("on_complete", "hold_last"))),
+            builtin=bool(data.get("builtin", False)),
+        )
+
+
+@dataclass
+class ProgramState:
+    """Mutable, persisted runtime state of a running program."""
+
+    program_id: str | None = None
+    status: ProgramStatus = ProgramStatus.IDLE
+    phase_index: int = 0
+    started_at: float | None = None
+    phase_started_at: float | None = None
+    accumulated_paused: float = 0.0
+    paused_at: float | None = None
+    reference_weight: float | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "program_id": self.program_id,
+            "status": self.status.value,
+            "phase_index": self.phase_index,
+            "started_at": self.started_at,
+            "phase_started_at": self.phase_started_at,
+            "accumulated_paused": self.accumulated_paused,
+            "paused_at": self.paused_at,
+            "reference_weight": self.reference_weight,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> ProgramState:
+        return cls(
+            program_id=_opt_str(data.get("program_id")),
+            status=ProgramStatus(str(data.get("status", "idle"))),
+            phase_index=int(_opt_float(data.get("phase_index")) or 0),
+            started_at=_opt_float(data.get("started_at")),
+            phase_started_at=_opt_float(data.get("phase_started_at")),
+            accumulated_paused=_opt_float(data.get("accumulated_paused")) or 0.0,
+            paused_at=_opt_float(data.get("paused_at")),
+            reference_weight=_opt_float(data.get("reference_weight")),
+        )
+
+
+@dataclass(frozen=True)
+class ProgramEvent:
+    """An event produced by the engine."""
+
+    type: ProgramEventType
+    phase_index: int
+    phase_name: str
+    notify: bool = True
+    params: dict[str, float | str] = field(default_factory=dict)
+
+
+def _opt_float(value: object) -> float | None:
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _opt_str(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _as_mapping(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise TypeError("expected a mapping for a phase")
+    return value

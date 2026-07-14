@@ -20,7 +20,9 @@ PAST = 200.0
 
 def test_fan_runs_during_active_regulation() -> None:
     cfg = make_config(
-        Actuator.COOL, Actuator.FAN, target_temp=13.0,
+        Actuator.COOL,
+        Actuator.FAN,
+        target_temp=13.0,
         actuators={
             Actuator.COOL: ActuatorConfig(present=True, min_on=0, min_off=0),
             Actuator.FAN: ActuatorConfig(present=True, min_on=0, min_off=0),
@@ -34,7 +36,11 @@ def test_fan_runs_during_active_regulation() -> None:
 
 def test_fan_duty_cycle_when_idle() -> None:
     cfg = make_config(
-        Actuator.FAN, target_temp=13.0, fan_period=1800.0, fan_run=300.0,
+        Actuator.FAN,
+        target_temp=13.0,
+        fan_period=1800.0,
+        fan_run=300.0,
+        startup_delay=0.0,
         actuators={Actuator.FAN: ActuatorConfig(present=True, min_on=0, min_off=0)},
     )
     eng = RegulationEngine(start=0.0)
@@ -47,7 +53,11 @@ def test_fan_duty_cycle_when_idle() -> None:
 
 def test_vent_triggered_by_co2() -> None:
     cfg = make_config(
-        Actuator.VENT, target_temp=13.0, co2_threshold=1500.0, vent_period=1e9, vent_run=1.0,
+        Actuator.VENT,
+        target_temp=13.0,
+        co2_threshold=1500.0,
+        vent_period=1e9,
+        vent_run=1.0,
         actuators={Actuator.VENT: ActuatorConfig(present=True, min_on=0, min_off=0)},
     )
     eng = RegulationEngine(start=0.0)
@@ -69,26 +79,35 @@ def test_condensation_alert() -> None:
     # 99 %RH at 13 degC -> dew point ~ air temp -> condensation risk.
     out = eng.tick(
         RegulationInputs(temp=13.0, temp_valid=True, humidity=99.0, humidity_valid=True),
-        cfg, PAST,
+        cfg,
+        PAST,
     )
     assert any(a.key is AlertKey.CONDENSATION_RISK for a in out.alerts)
 
 
 def test_case_hardening_on_fast_drying() -> None:
     cfg = make_config(
-        Actuator.COOL, target_temp=13.0, case_hardening_rate=1.5, degraded_delay=0.0,
+        Actuator.COOL,
+        target_temp=13.0,
+        case_hardening_rate=1.5,
+        degraded_delay=0.0,
     )
     eng = RegulationEngine(start=0.0)
     out = eng.tick(
-        RegulationInputs(temp=13.0, temp_valid=True, drying_rate=3.0), cfg, PAST,
+        RegulationInputs(temp=13.0, temp_valid=True, drying_rate=3.0),
+        cfg,
+        PAST,
     )
     assert any(a.key is AlertKey.CASE_HARDENING for a in out.alerts)
 
 
 def test_high_temp_drying_alert() -> None:
     cfg = make_config(
-        Actuator.HEAT, target_temp=13.0, drying_phase=True,
-        high_temp_drying_limit=16.0, high_temp_drying_duration=0.0,
+        Actuator.HEAT,
+        target_temp=13.0,
+        drying_phase=True,
+        high_temp_drying_limit=16.0,
+        high_temp_drying_duration=0.0,
     )
     eng = RegulationEngine(start=0.0)
     out = eng.tick(RegulationInputs(temp=17.0, temp_valid=True), cfg, PAST)
@@ -97,7 +116,10 @@ def test_high_temp_drying_alert() -> None:
 
 def test_manual_temp_high_when_no_cooling() -> None:
     cfg = make_config(
-        Actuator.HEAT, target_temp=13.0, temp_deadband=0.5, degraded_band_factor=2.0,
+        Actuator.HEAT,
+        target_temp=13.0,
+        temp_deadband=0.5,
+        degraded_band_factor=2.0,
         degraded_delay=0.0,
     )
     eng = RegulationEngine(start=0.0)
@@ -120,15 +142,17 @@ def test_divergence_alert_between_probes() -> None:
     eng = RegulationEngine(start=0.0)
     out = eng.tick(
         RegulationInputs(
-            temp=13.0, temp_valid=True, temp_probes=(12.0, 16.0),
+            temp=13.0,
+            temp_valid=True,
+            temp_probes=(12.0, 16.0),
         ),
-        cfg, PAST,
+        cfg,
+        PAST,
     )
     assert any(a.key is AlertKey.SENSOR_DIVERGENCE_TEMP for a in out.alerts)
 
 
 def test_sync_actual_state_reflects_manual_override() -> None:
-    cfg = make_config(Actuator.COOL, target_temp=13.0)
     eng = RegulationEngine(start=0.0)
     eng.sync_actual_state(Actuator.COOL, True, now=PAST)
     assert eng.state[Actuator.COOL] is True
