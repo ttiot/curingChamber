@@ -1,0 +1,12 @@
+{
+  "domain": "curing_chamber",
+  "name": "Curing Chamber",
+  "codeowners": ["@ttiot"],
+  "config_flow": true,
+  "documentation": "https://github.com/ttiot/curingchamber",
+  "integration_type": "hub",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/ttiot/curingchamber/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

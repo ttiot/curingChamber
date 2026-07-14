@@ -1,0 +1,160 @@
+{
+  "title": "Curing Chamber",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Curing Chamber — sensors",
+        "description": "Name the chamber and select its sensors. Temperature and humidity are needed to regulate, but the integration installs even without them (monitoring-only).",
+        "data": {
+          "name": "Name",
+          "temp_sensor": "Temperature sensor",
+          "humidity_sensor": "Humidity sensor",
+          "temp_sensor_2": "Second temperature sensor (optional)",
+          "humidity_sensor_2": "Second humidity sensor (optional)",
+          "product_temp_sensor": "Product core temperature (optional)",
+          "weight_sensor": "Weight sensor / scale (optional)",
+          "co2_sensor": "CO₂ / air quality sensor (optional)",
+          "door_sensor": "Door open sensor (optional)"
+        }
+      },
+      "actuators": {
+        "title": "Curing Chamber — actuators",
+        "description": "Select the actuators you have. All are optional; configure none for monitoring only.",
+        "data": {
+          "cool_switch": "Cooling (compressor)",
+          "heat_switch": "Heating",
+          "humidify_switch": "Humidifier",
+          "dehumidify_switch": "Dehumidifier",
+          "fan_switch": "Stirring fan",
+          "vent_switch": "Air renewal / extraction"
+        }
+      },
+      "notifications": {
+        "title": "Curing Chamber — notifications",
+        "description": "Optionally pick notify services (e.g. mobile app) for alerts. Persistent notifications are always created.",
+        "data": {
+          "notify_services": "Notify services"
+        }
+      },
+      "food_safety": {
+        "title": "Food safety disclaimer",
+        "description": "This integration controls the chamber environment but does NOT guarantee product safety. It measures neither water activity (aw) nor pH. Hygiene, correct salting (incl. nitrite salt where appropriate) and recipes remain your responsibility. Submit to acknowledge and finish."
+      }
+    },
+    "abort": {
+      "already_configured": "This chamber is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Curing Chamber options",
+        "menu_options": {
+          "sensors": "Sensors",
+          "actuators": "Actuators",
+          "regulation": "Regulation & safety",
+          "notifications": "Notifications"
+        }
+      },
+      "sensors": {
+        "title": "Sensors",
+        "data": {
+          "temp_sensor": "Temperature sensor",
+          "humidity_sensor": "Humidity sensor",
+          "temp_sensor_2": "Second temperature sensor",
+          "humidity_sensor_2": "Second humidity sensor",
+          "product_temp_sensor": "Product core temperature",
+          "weight_sensor": "Weight sensor / scale",
+          "co2_sensor": "CO₂ / air quality sensor",
+          "door_sensor": "Door open sensor"
+        }
+      },
+      "actuators": {
+        "title": "Actuators",
+        "data": {
+          "cool_switch": "Cooling (compressor)",
+          "heat_switch": "Heating",
+          "humidify_switch": "Humidifier",
+          "dehumidify_switch": "Dehumidifier",
+          "fan_switch": "Stirring fan",
+          "vent_switch": "Air renewal / extraction"
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "data": {
+          "notify_services": "Notify services"
+        }
+      },
+      "regulation": {
+        "title": "Regulation & safety",
+        "description": "Hysteresis, compressor protection and safety limits. Defaults are sensible; adjust with care.",
+        "data": {
+          "temp_deadband": "Temperature deadband (±°C)",
+          "humidity_deadband": "Humidity deadband (±%RH)",
+          "cool_min_off": "Cooling minimum OFF time (s)",
+          "cool_min_on": "Cooling minimum ON time (s)",
+          "actuator_min_off": "Other actuators minimum OFF time (s)",
+          "actuator_min_on": "Other actuators minimum ON time (s)",
+          "startup_delay": "Startup lockout delay (s)",
+          "humidity_anti_oscillation": "Humidity anti-oscillation window (s)",
+          "temp_abs_min": "Absolute minimum temperature (°C)",
+          "temp_abs_max": "Absolute maximum temperature (°C)",
+          "humidity_abs_min": "Absolute minimum humidity (%RH)",
+          "humidity_abs_max": "Absolute maximum humidity (%RH)",
+          "degraded_delay": "Degraded-mode onset delay (s)",
+          "degraded_reminder": "Alert reminder interval (s)",
+          "door_open_alert_minutes": "Door-open alert delay (min)",
+          "sensor_stale_minutes": "Frozen-sensor timeout (min)",
+          "tick_interval": "Control interval (s)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "climate": {
+      "chamber_temperature": { "name": "Temperature" }
+    },
+    "humidifier": {
+      "chamber_humidity": { "name": "Humidity" }
+    },
+    "sensor": {
+      "dew_point": { "name": "Dew point" },
+      "absolute_humidity": { "name": "Absolute humidity" },
+      "weight_loss": { "name": "Weight loss" },
+      "drying_rate": { "name": "Drying rate" },
+      "phase": { "name": "Current phase" },
+      "phase_remaining": { "name": "Phase time remaining" },
+      "regulation_state": { "name": "Regulation state" },
+      "runtime_cool": { "name": "Cooling run time" },
+      "runtime_heat": { "name": "Heating run time" },
+      "runtime_humidify": { "name": "Humidifier run time" },
+      "runtime_dehumidify": { "name": "Dehumidifier run time" },
+      "runtime_fan": { "name": "Fan run time" },
+      "runtime_vent": { "name": "Ventilation run time" }
+    },
+    "binary_sensor": {
+      "manual_action_required": { "name": "Manual action required" },
+      "out_of_range": { "name": "Out-of-range alarm" },
+      "sensor_fault": { "name": "Sensor fault" },
+      "sensor_divergence": { "name": "Probe divergence" },
+      "door_open_too_long": { "name": "Door open too long" }
+    },
+    "switch": {
+      "regulation": { "name": "Regulation" },
+      "maintenance": { "name": "Maintenance mode" }
+    },
+    "select": {
+      "program": { "name": "Program" }
+    },
+    "button": {
+      "next_phase": { "name": "Next phase" },
+      "set_reference_weight": { "name": "Set reference weight" },
+      "acknowledge_alert": { "name": "Acknowledge alerts" }
+    },
+    "number": {
+      "manual_temperature": { "name": "Manual temperature target" },
+      "manual_humidity": { "name": "Manual humidity target" }
+    }
+  }
+}
