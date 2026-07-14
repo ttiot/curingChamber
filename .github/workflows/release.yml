@@ -1,6 +1,9 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types: [published]
 
@@ -30,7 +33,8 @@ jobs:
           cd custom_components/curing_chamber
           zip -r curing_chamber.zip . -x '*.pyc' -x '__pycache__/*'
 
-      - name: Upload release asset
+      - name: Publish release with asset
         uses: softprops/action-gh-release@v2
         with:
           files: custom_components/curing_chamber/curing_chamber.zip
+          generate_release_notes: true
