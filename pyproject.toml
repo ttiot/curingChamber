@@ -1,0 +1,56 @@
+[project]
+name = "curing_chamber"
+version = "0.1.0"
+description = "Home Assistant custom integration to drive a charcuterie curing chamber."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["custom_components/curing_chamber/regulation", "custom_components/curing_chamber/program"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["custom_components", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PL", "RUF"]
+ignore = [
+    "PLR0913",  # many arguments: control logic legitimately takes several tuning knobs
+    "PLR0912",  # many branches: the engine is inherently branchy
+    "PLR0911",  # many returns
+    "PLR2004",  # magic values in tests/formulas
+    "PLR0915",  # many statements
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004", "S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+files = [
+    "custom_components/curing_chamber/regulation",
+    "custom_components/curing_chamber/program",
+]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
