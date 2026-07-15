@@ -39,10 +39,14 @@ diagnostics, and full FR/EN translations.
   cut the aggravating actuator.
 - **Multi-phase programs** with 6 built-in presets, phase end on duration,
   weight loss (with a scale) or manual.
+- **Product batches** with **manual weigh-ins** (no scale required, optional
+  note + photo), per-batch drying curve and a **predicted completion date (ETA)**;
+  the reference batch drives the program's weight-loss phase.
 - **Derived sensors:** dew point (Magnus), absolute humidity, weight loss %,
   drying rate %/day.
 - **Native entities** (`climate`, `humidifier`, `sensor`, `binary_sensor`,
-  `switch`, `select`, `button`, `number`), services and bus events.
+  `switch`, `select`, `button`, `number`), services, bus events and a bundled
+  **custom Lovelace card**.
 
 ---
 
@@ -184,6 +188,59 @@ When several chambers exist, target one with the `device_id` field.
 
 ---
 
+## Batches & manual weigh-ins
+
+A **batch** is one product curing in the chamber, with its own reference weight,
+target weight loss and a **history of weigh-ins**. Weigh-ins can come from a
+scale or be entered by hand — **no scale required** — optionally with a note and
+a photo. From the weigh-in history the integration derives each batch's current
+weight loss, drying rate and a **predicted completion date (ETA)**.
+
+Several batches can be tracked at once; the one you mark as **reference** drives
+the running program's weight-loss phase end (others are tracked for their curve
+and ETA). A batch that reaches its target loss is auto-completed and fires a
+`batch_completed` bus event.
+
+```yaml
+# Create a batch (first one becomes the reference automatically)
+service: curing_chamber.create_batch
+data:
+  name: "Coppa #1"
+  product: coppa
+  reference_weight: 1200      # omit to use the first weigh-in as the reference
+  target_loss_pct: 35
+
+# Record a weigh-in — works without a scale; photo is optional
+service: curing_chamber.record_weight
+data:
+  batch_id: coppa_1
+  weight: 1080
+  note: "day 12"
+  photo: "/config/www/photos/coppa_day12.jpg"   # path, base64 or data: URL
+```
+
+Photos are stored under `<config>/www/curing_chamber/<batch_id>/` and served at
+`/local/curing_chamber/<batch_id>/…`. Other batch services:
+`set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`.
+
+New sensors: **Active batches** (with a `batches` attribute carrying every
+batch's loss/rate/ETA/photo — the data source for the card below),
+**Reference batch weight loss** (%) and **Reference batch estimated end** (a
+timestamp).
+
+### Custom card
+
+The integration bundles a Lovelace card (`curing-chamber-card`, auto-registered)
+showing each batch's drying curve, loss gauge and ETA, plus an inline
+weight-and-photo form to record a weigh-in from your phone:
+
+```yaml
+type: custom:curing-chamber-card
+entity: sensor.curing_chamber_active_batches
+```
+
+---
+
 ## Example dashboard (Lovelace YAML)
 
 ```yaml
@@ -272,16 +329,17 @@ ruff check custom_components tests
 ruff format --check custom_components tests
 mypy                       # strict, pure engines
 pytest --cov=custom_components/curing_chamber/regulation \
-       --cov=custom_components/curing_chamber/program
+       --cov=custom_components/curing_chamber/program \
+       --cov=custom_components/curing_chamber/batch
 ```
 
-The control logic lives in two **pure** packages (`regulation/`, `program/`)
-with no `homeassistant` imports and injected time, unit-tested to ≥ 85 % without
-Home Assistant. CI runs ruff, mypy, pytest+coverage, hassfest and HACS
-validation on Python 3.13.
+The control logic lives in three **pure** packages (`regulation/`, `program/`,
+`batch/`) with no `homeassistant` imports and injected time, unit-tested to
+≥ 85 % without Home Assistant. CI runs ruff, mypy, pytest+coverage, hassfest and
+HACS validation on Python 3.13.
 
-Roadmap (out of scope for v1): PID control, custom Lovelace card, predictive
-drying curves, multiple products per chamber.
+Roadmap: PID control, and an exponential (rather than linear) drying-curve
+model for a sharper ETA near the end of curing.
 
 ---
 ---
@@ -323,8 +381,12 @@ d'action manuelle en mode dégradé, diagnostics, traductions FR/EN complètes.
   absolues coupent l'actionneur aggravant.
 - **Programmes multi-phases** avec 6 presets ; fin de phase sur durée, perte de
   poids (avec balance) ou manuelle.
+- **Lots de produits** avec **pesées manuelles** (sans balance, note + photo
+  optionnelles), courbe de séchage par lot et **date de fin estimée (ETA)** ; le
+  lot de référence pilote la phase de perte de poids du programme.
 - **Capteurs dérivés** : point de rosée (Magnus), humidité absolue, perte de
   poids %, vitesse de séchage %/jour.
+- **Carte Lovelace personnalisée** fournie avec l'intégration.
 
 ## Installation (HACS)
 
@@ -426,6 +488,57 @@ porter `duration_hours` (plafond de sécurité / repli sans balance). Démarrez 
 `set_reference_weight`, `acknowledge_alert`, `delete_program`. Avec plusieurs
 chambres, ciblez-en une via le champ `device_id`.
 
+## Lots & pesées manuelles
+
+Un **lot** est un produit en cours d'affinage, avec son poids de référence, sa
+cible de perte de poids et un **historique de pesées**. Les pesées peuvent venir
+d'une balance ou être **saisies à la main — sans balance** — avec, en option,
+une note et une photo. À partir de cet historique, l'intégration calcule pour
+chaque lot la perte de poids courante, la vitesse de séchage et une **date de
+fin estimée (ETA)**.
+
+Plusieurs lots peuvent être suivis en parallèle ; celui marqué comme
+**référence** pilote la fin de phase `weight_loss` du programme (les autres sont
+suivis pour leur courbe et leur ETA). Un lot atteignant sa cible passe
+automatiquement à « terminé » et émet un événement `batch_completed`.
+
+```yaml
+# Créer un lot (le premier devient automatiquement la référence)
+service: curing_chamber.create_batch
+data:
+  name: "Coppa #1"
+  product: coppa
+  reference_weight: 1200      # omettre pour prendre la 1re pesée comme référence
+  target_loss_pct: 35
+
+# Enregistrer une pesée — fonctionne sans balance ; photo optionnelle
+service: curing_chamber.record_weight
+data:
+  batch_id: coppa_1
+  weight: 1080
+  note: "jour 12"
+  photo: "/config/www/photos/coppa_jour12.jpg"   # chemin, base64 ou URL data:
+```
+
+Les photos sont stockées sous `<config>/www/curing_chamber/<batch_id>/` et
+servies via `/local/curing_chamber/<batch_id>/…`. Autres services de lot :
+`set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`.
+
+Nouveaux capteurs : **Lots actifs** (attribut `batches` détaillant perte / vitesse
+/ ETA / photo de chaque lot — source de données de la carte),
+**Perte de poids du lot de référence** (%) et **Fin estimée du lot de référence**.
+
+### Carte personnalisée
+
+L'intégration fournit une carte Lovelace (`curing-chamber-card`, auto-enregistrée)
+montrant la courbe de séchage, la jauge de perte et l'ETA de chaque lot, plus un
+formulaire intégré poids + photo pour saisir une pesée depuis votre téléphone :
+
+```yaml
+type: custom:curing-chamber-card
+entity: sensor.curing_chamber_active_batches
+```
+
 ## FAQ / dépannage
 
 - **Le froid ne démarre jamais.** Vérifiez : sonde de température présente
@@ -448,10 +561,10 @@ complet et anonymisé (config, dernières décisions, compteurs, alertes actives
 ## Développement
 
 Voir la section anglaise ci-dessus (ruff, mypy, pytest). La logique de contrôle
-vit dans deux paquets **purs** (`regulation/`, `program/`) sans import
+vit dans trois paquets **purs** (`regulation/`, `program/`, `batch/`) sans import
 `homeassistant` et avec temps injecté, testés unitairement à ≥ 85 % sans Home
 Assistant. La CI exécute ruff, mypy, pytest+couverture, hassfest et la
 validation HACS sous Python 3.13.
 
-Hors périmètre v1 (roadmap) : régulation PID, carte Lovelace custom, courbes de
-séchage prédictives, multi-produits par chambre.
+Roadmap : régulation PID, et un modèle de courbe de séchage exponentiel (plutôt
+que linéaire) pour affiner l'ETA en fin d'affinage.
