@@ -206,7 +206,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for event in program_events:
             self._handle_program_event(event, inputs)
 
-        self._check_batch_completion(now)
+        self._check_batch_completion()
 
         outputs = self.regulation.tick(inputs, reg_config, now)
         await self._apply_commands(outputs)
@@ -216,7 +216,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist_program()
         return self._snapshot(inputs, reg_config, outputs)
 
-    def _check_batch_completion(self, now: float) -> None:
+    def _check_batch_completion(self) -> None:
         """Mark active batches whose target weight loss has been reached."""
         changed = False
         for batch in self.batches.values():
