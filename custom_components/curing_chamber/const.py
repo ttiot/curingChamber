@@ -105,6 +105,7 @@ EVENT_TYPE_PROGRAM_COMPLETED: Final = "program_completed"
 EVENT_TYPE_ALERT_RAISED: Final = "alert_raised"
 EVENT_TYPE_ALERT_CLEARED: Final = "alert_cleared"
 EVENT_TYPE_MANUAL_ACTION: Final = "manual_action_required"
+EVENT_TYPE_BATCH_COMPLETED: Final = "batch_completed"
 
 # --- Storage -----------------------------------------------------------------
 STORAGE_VERSION: Final = 1
@@ -121,6 +122,17 @@ SERVICE_SET_REFERENCE_WEIGHT: Final = "set_reference_weight"
 SERVICE_ACKNOWLEDGE_ALERT: Final = "acknowledge_alert"
 SERVICE_CREATE_PROGRAM: Final = "create_program"
 SERVICE_DELETE_PROGRAM: Final = "delete_program"
+SERVICE_CREATE_BATCH: Final = "create_batch"
+SERVICE_RECORD_WEIGHT: Final = "record_weight"
+SERVICE_SET_REFERENCE_BATCH: Final = "set_reference_batch"
+SERVICE_COMPLETE_BATCH: Final = "complete_batch"
+SERVICE_ARCHIVE_BATCH: Final = "archive_batch"
+SERVICE_DELETE_BATCH: Final = "delete_batch"
+
+# --- Batch photos ------------------------------------------------------------
+# Weigh-in photos are written under <config>/www/<PHOTO_WWW_SUBDIR>/<batch_id>/
+# and served by Home Assistant under /local/<PHOTO_WWW_SUBDIR>/<batch_id>/.
+PHOTO_WWW_SUBDIR: Final = "curing_chamber"
 
 # Platforms managed by this integration.
 PLATFORMS: Final = [

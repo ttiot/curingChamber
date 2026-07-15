@@ -99,6 +99,30 @@ SENSORS: tuple[CuringSensorDescription, ...] = (
             "last_decisions": d.get("decisions"),
         },
     ),
+    CuringSensorDescription(
+        key="batches",
+        translation_key="batches",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: d.get("active_batch_count"),
+        attrs_fn=lambda d: {
+            "batches": d.get("batches"),
+            "reference_batch_id": d.get("reference_batch_id"),
+        },
+    ),
+    CuringSensorDescription(
+        key="reference_batch_loss",
+        translation_key="reference_batch_loss",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda d: d.get("reference_batch_loss_pct"),
+    ),
+    CuringSensorDescription(
+        key="reference_batch_eta",
+        translation_key="reference_batch_eta",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda d: d.get("reference_batch_eta"),
+    ),
 )
 
 

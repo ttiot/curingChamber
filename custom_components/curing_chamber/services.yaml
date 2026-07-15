@@ -148,3 +148,158 @@ delete_program:
       required: true
       selector:
         text:
+
+create_batch:
+  name: Create batch
+  description: >-
+    Register a product being cured. It tracks weight loss from its weigh-ins;
+    the reference batch drives the running program's weight-loss phase.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    name:
+      name: Name
+      description: Display name of the batch (e.g. "Coppa #1").
+      required: true
+      example: Coppa #1
+      selector:
+        text:
+    product:
+      name: Product
+      description: Free-text product/recipe (e.g. coppa, saucisson).
+      selector:
+        text:
+    program_id:
+      name: Program id
+      description: Optional program associated with this batch.
+      selector:
+        text:
+    reference_weight:
+      name: Reference weight
+      description: Starting weight (omit to use the first weigh-in as reference).
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 1
+    target_loss_pct:
+      name: Target weight loss
+      description: Target weight loss in % of the reference weight.
+      selector:
+        number:
+          min: 0
+          max: 90
+          step: 1
+          unit_of_measurement: "%"
+    set_as_reference:
+      name: Set as reference
+      description: Make this the reference batch driving the program.
+      selector:
+        boolean:
+
+record_weight:
+  name: Record weigh-in
+  description: >-
+    Add a weigh-in to a batch (works without a scale). Optionally attach a
+    timestamp, a note and a photo.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      description: Identifier of the batch (from create_batch).
+      required: true
+      selector:
+        text:
+    weight:
+      name: Weight
+      description: Measured weight, in the same unit as the reference weight.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 1
+    timestamp:
+      name: Timestamp
+      description: When the weigh-in was taken (defaults to now).
+      selector:
+        datetime:
+    note:
+      name: Note
+      description: Optional free-text note for this weigh-in.
+      selector:
+        text:
+    photo:
+      name: Photo
+      description: >-
+        Optional photo as a data URL, base64 string, or a local file path;
+        stored under /config/www and served at /local/curing_chamber/...
+      selector:
+        text:
+
+set_reference_batch:
+  name: Set reference batch
+  description: Choose which batch drives the program's weight-loss phase.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      required: true
+      selector:
+        text:
+
+complete_batch:
+  name: Complete batch
+  description: Mark a batch as completed (finished curing).
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      required: true
+      selector:
+        text:
+
+archive_batch:
+  name: Archive batch
+  description: Archive a batch (kept for history, hidden from active tracking).
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      required: true
+      selector:
+        text:
+
+delete_batch:
+  name: Delete batch
+  description: Permanently delete a batch and its weigh-in history.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      required: true
+      selector:
+        text:

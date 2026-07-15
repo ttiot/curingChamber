@@ -113,48 +113,113 @@
   },
   "entity": {
     "climate": {
-      "chamber_temperature": { "name": "Température" }
+      "chamber_temperature": {
+        "name": "Température"
+      }
     },
     "humidifier": {
-      "chamber_humidity": { "name": "Hygrométrie" }
+      "chamber_humidity": {
+        "name": "Hygrométrie"
+      }
     },
     "sensor": {
-      "dew_point": { "name": "Point de rosée" },
-      "absolute_humidity": { "name": "Humidité absolue" },
-      "weight_loss": { "name": "Perte de poids" },
-      "drying_rate": { "name": "Vitesse de séchage" },
-      "phase": { "name": "Phase courante" },
-      "phase_remaining": { "name": "Temps restant de phase" },
-      "regulation_state": { "name": "État de régulation" },
-      "runtime_cool": { "name": "Temps de fonctionnement froid" },
-      "runtime_heat": { "name": "Temps de fonctionnement chauffage" },
-      "runtime_humidify": { "name": "Temps de fonctionnement humidificateur" },
-      "runtime_dehumidify": { "name": "Temps de fonctionnement déshumidificateur" },
-      "runtime_fan": { "name": "Temps de fonctionnement ventilateur" },
-      "runtime_vent": { "name": "Temps de fonctionnement ventilation" }
+      "dew_point": {
+        "name": "Point de rosée"
+      },
+      "absolute_humidity": {
+        "name": "Humidité absolue"
+      },
+      "weight_loss": {
+        "name": "Perte de poids"
+      },
+      "drying_rate": {
+        "name": "Vitesse de séchage"
+      },
+      "phase": {
+        "name": "Phase courante"
+      },
+      "phase_remaining": {
+        "name": "Temps restant de phase"
+      },
+      "regulation_state": {
+        "name": "État de régulation"
+      },
+      "runtime_cool": {
+        "name": "Temps de fonctionnement froid"
+      },
+      "runtime_heat": {
+        "name": "Temps de fonctionnement chauffage"
+      },
+      "runtime_humidify": {
+        "name": "Temps de fonctionnement humidificateur"
+      },
+      "runtime_dehumidify": {
+        "name": "Temps de fonctionnement déshumidificateur"
+      },
+      "runtime_fan": {
+        "name": "Temps de fonctionnement ventilateur"
+      },
+      "runtime_vent": {
+        "name": "Temps de fonctionnement ventilation"
+      },
+      "batches": {
+        "name": "Lots actifs"
+      },
+      "reference_batch_loss": {
+        "name": "Perte de poids du lot de référence"
+      },
+      "reference_batch_eta": {
+        "name": "Fin estimée du lot de référence"
+      }
     },
     "binary_sensor": {
-      "manual_action_required": { "name": "Action manuelle requise" },
-      "out_of_range": { "name": "Alarme hors-plage" },
-      "sensor_fault": { "name": "Défaut capteur" },
-      "sensor_divergence": { "name": "Divergence des sondes" },
-      "door_open_too_long": { "name": "Porte ouverte trop longtemps" }
+      "manual_action_required": {
+        "name": "Action manuelle requise"
+      },
+      "out_of_range": {
+        "name": "Alarme hors-plage"
+      },
+      "sensor_fault": {
+        "name": "Défaut capteur"
+      },
+      "sensor_divergence": {
+        "name": "Divergence des sondes"
+      },
+      "door_open_too_long": {
+        "name": "Porte ouverte trop longtemps"
+      }
     },
     "switch": {
-      "regulation": { "name": "Régulation" },
-      "maintenance": { "name": "Mode maintenance" }
+      "regulation": {
+        "name": "Régulation"
+      },
+      "maintenance": {
+        "name": "Mode maintenance"
+      }
     },
     "select": {
-      "program": { "name": "Programme" }
+      "program": {
+        "name": "Programme"
+      }
     },
     "button": {
-      "next_phase": { "name": "Phase suivante" },
-      "set_reference_weight": { "name": "Définir le poids de référence" },
-      "acknowledge_alert": { "name": "Acquitter les alertes" }
+      "next_phase": {
+        "name": "Phase suivante"
+      },
+      "set_reference_weight": {
+        "name": "Définir le poids de référence"
+      },
+      "acknowledge_alert": {
+        "name": "Acquitter les alertes"
+      }
     },
     "number": {
-      "manual_temperature": { "name": "Consigne manuelle de température" },
-      "manual_humidity": { "name": "Consigne manuelle d'hygrométrie" }
+      "manual_temperature": {
+        "name": "Consigne manuelle de température"
+      },
+      "manual_humidity": {
+        "name": "Consigne manuelle d'hygrométrie"
+      }
     }
   }
 }
