@@ -1,7 +1,8 @@
 """Persistence helpers built on Home Assistant's Store.
 
 Persists user-defined programs, the running-program state (so a curing cycle
-resumes transparently after a restart) and per-actuator run-hour counters.
+resumes transparently after a restart), per-actuator run-hour counters and the
+product batches (with their weigh-in history and the designated reference batch).
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ class CuringChamberStore:
         self._data.setdefault("programs", {})
         self._data.setdefault("program_state", None)
         self._data.setdefault("counters", {})
+        self._data.setdefault("batches", {})
+        self._data.setdefault("reference_batch_id", None)
         return self._data
 
     @property
@@ -51,6 +54,14 @@ class CuringChamberStore:
     def counters(self) -> dict[str, float]:
         return self._data.setdefault("counters", {})
 
+    @property
+    def batches(self) -> dict[str, Any]:
+        return self._data.setdefault("batches", {})
+
+    @property
+    def reference_batch_id(self) -> str | None:
+        return self._data.get("reference_batch_id")
+
     def set_program_state(self, state: dict[str, Any] | None) -> None:
         self._data["program_state"] = state
 
@@ -62,6 +73,18 @@ class CuringChamberStore:
 
     def set_counters(self, counters: dict[str, float]) -> None:
         self._data["counters"] = counters
+
+    def upsert_batch(self, batch_id: str, batch: dict[str, Any]) -> None:
+        self.batches[batch_id] = batch
+
+    def delete_batch(self, batch_id: str) -> bool:
+        removed = self.batches.pop(batch_id, None) is not None
+        if removed and self._data.get("reference_batch_id") == batch_id:
+            self._data["reference_batch_id"] = None
+        return removed
+
+    def set_reference_batch(self, batch_id: str | None) -> None:
+        self._data["reference_batch_id"] = batch_id
 
     @callback
     def async_save(self) -> None:

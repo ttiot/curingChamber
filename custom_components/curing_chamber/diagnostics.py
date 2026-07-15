@@ -63,6 +63,21 @@ async def async_get_config_entry_diagnostics(
             "active_alerts": data.get("active_alerts"),
             "counters": data.get("counters"),
             "last_decisions": data.get("decisions"),
+            "reference_batch_id": data.get("reference_batch_id"),
+            # Batch names/notes/photos are omitted to keep diagnostics shareable.
+            "batches": [
+                {
+                    "status": b.get("status"),
+                    "product": b.get("product"),
+                    "reference_weight": b.get("reference_weight"),
+                    "target_loss_pct": b.get("target_loss_pct"),
+                    "loss_pct": b.get("loss_pct"),
+                    "drying_rate": b.get("drying_rate"),
+                    "eta": b.get("eta"),
+                    "sample_count": len(b.get("samples") or []),
+                }
+                for b in (data.get("batches") or [])
+            ],
         },
         "regulation_enabled": coordinator.regulation_enabled,
         "maintenance": coordinator.maintenance,

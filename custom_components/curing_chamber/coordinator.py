@@ -7,7 +7,10 @@ raises notifications/events and persists the running program.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
+import os
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -25,18 +28,23 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 from homeassistant.util.unit_conversion import TemperatureConverter
 
+from . import batch as batch_engine
 from . import config as conf
 from . import messages
+from .batch import Batch, BatchStatus, WeightSample
 from .const import (
     DOMAIN,
     EVENT_CURING_CHAMBER,
     EVENT_TYPE_ALERT_CLEARED,
     EVENT_TYPE_ALERT_RAISED,
+    EVENT_TYPE_BATCH_COMPLETED,
     EVENT_TYPE_MANUAL_ACTION,
     EVENT_TYPE_PHASE_CHANGED,
     EVENT_TYPE_PROGRAM_COMPLETED,
+    PHOTO_WWW_SUBDIR,
 )
 from .program import PRESETS, ProgramEngine, ProgramEventType, ProgramStatus
 from .program.presets import preset_by_id
@@ -69,6 +77,25 @@ _ACTUATOR_CONF = {
 }
 
 
+def _photo_bytes(photo: str) -> bytes | None:
+    """Decode a weigh-in photo supplied as a data URL, base64 or a local path."""
+    if not photo:
+        return None
+    if photo.startswith("data:"):
+        _, _, encoded = photo.partition(",")
+        try:
+            return base64.b64decode(encoded)
+        except (binascii.Error, ValueError):
+            return None
+    if os.path.isfile(photo):
+        with open(photo, "rb") as handle:
+            return handle.read()
+    try:
+        return base64.b64decode(photo, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+
+
 class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Drive one curing chamber."""
 
@@ -98,6 +125,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_actuator_states: dict[Actuator, bool] = {}
         self._last_weight: tuple[float, float] | None = None  # (weight, timestamp)
         self._drying_rate: float | None = None
+        self.batches: dict[str, Batch] = {}
         self.chamber_name: str = conf.get(entry, conf.CONF_NAME, entry.title)
 
     # -- Lifecycle -----------------------------------------------------------
@@ -109,6 +137,9 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state_blob = self.store.program_state
         if state_blob:
             self.program = ProgramEngine.from_dict(state_blob)
+        self.batches = {
+            batch_id: Batch.from_dict(raw) for batch_id, raw in self.store.batches.items()
+        }
         self._track_sources()
 
     def _configure_filters(self) -> None:
@@ -168,10 +199,14 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         inputs = self._read_inputs(now)
         reg_config = self._build_config(inputs)
 
-        # Advance the program (may change active targets and emit events).
+        # Advance the program (may change active targets and emit events). The
+        # weight driving the weight-loss end condition is the reference batch's
+        # latest weigh-in, falling back to the chamber scale (see _read_inputs).
         program_events = self.program.tick(now, weight=inputs.weight)
         for event in program_events:
             self._handle_program_event(event, inputs)
+
+        self._check_batch_completion()
 
         outputs = self.regulation.tick(inputs, reg_config, now)
         await self._apply_commands(outputs)
@@ -180,6 +215,23 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._persist_program()
         return self._snapshot(inputs, reg_config, outputs)
+
+    def _check_batch_completion(self) -> None:
+        """Mark active batches whose target weight loss has been reached."""
+        changed = False
+        for batch in self.batches.values():
+            if batch.status is not BatchStatus.ACTIVE or batch.target_loss_pct is None:
+                continue
+            loss = batch_engine.current_loss_pct(batch)
+            if loss is not None and loss >= batch.target_loss_pct:
+                batch.status = BatchStatus.COMPLETED
+                changed = True
+                self._fire_event(
+                    EVENT_TYPE_BATCH_COMPLETED,
+                    {"batch_id": batch.id, "name": batch.name, "loss_pct": round(loss, 1)},
+                )
+        if changed:
+            self._persist_batches()
 
     # -- Reading sensors -----------------------------------------------------
 
@@ -228,7 +280,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         temp = average(temp_values)
         humidity = average(hum_values)
 
-        weight, _ = self._num_state(conf.CONF_WEIGHT_SENSOR)
+        weight = self._reference_weight_now()
         co2, _ = self._num_state(conf.CONF_CO2_SENSOR)
         product_temp = self._temp_c(conf.CONF_PRODUCT_TEMP_SENSOR)
         door_open = self._bool_state(conf.CONF_DOOR_SENSOR)
@@ -254,6 +306,20 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             drying_rate=self._drying_rate,
             actuator_states=actuator_states,
         )
+
+    def _reference_weight_now(self) -> float | None:
+        """Weight driving loss/rate: the reference batch's latest weigh-in.
+
+        Falls back to the chamber scale (``CONF_WEIGHT_SENSOR``) so a chamber
+        with no batch behaves exactly as before this feature existed.
+        """
+        ref_id = self.store.reference_batch_id
+        if ref_id:
+            batch = self.batches.get(ref_id)
+            if batch is not None and batch.latest_weight is not None:
+                return batch.latest_weight
+        weight, _ = self._num_state(conf.CONF_WEIGHT_SENSOR)
+        return weight
 
     def _update_drying_rate(self, weight: float | None, now: float) -> None:
         ref = self.program.state.reference_weight
@@ -506,6 +572,12 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.store.async_save()
 
+    def _persist_batches(self) -> None:
+        self.store.batches.clear()
+        for batch_id, batch in self.batches.items():
+            self.store.upsert_batch(batch_id, batch.to_dict())
+        self.store.async_save()
+
     # -- Public control API (used by services / entities) --------------------
 
     def available_programs(self) -> list[Program]:
@@ -584,6 +656,140 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.store.async_save()
         return removed
 
+    # -- Batch control API (used by services / entities) ---------------------
+
+    def _new_batch_id(self, name: str) -> str:
+        base = slugify(name) or "batch"
+        candidate = base
+        index = 2
+        while candidate in self.batches:
+            candidate = f"{base}_{index}"
+            index += 1
+        return candidate
+
+    async def async_create_batch(
+        self,
+        *,
+        name: str,
+        product: str | None = None,
+        program_id: str | None = None,
+        reference_weight: float | None = None,
+        target_loss_pct: float | None = None,
+        set_as_reference: bool = False,
+    ) -> Batch:
+        """Create a new batch; make it the reference when asked or if it's first."""
+        batch = Batch(
+            id=self._new_batch_id(name),
+            name=name,
+            product=product,
+            program_id=program_id,
+            reference_weight=reference_weight,
+            target_loss_pct=target_loss_pct,
+            created_at=dt_util.utcnow().timestamp(),
+        )
+        self.batches[batch.id] = batch
+        if set_as_reference or self.store.reference_batch_id is None:
+            self.store.set_reference_batch(batch.id)
+            self._last_weight = None
+        self._persist_batches()
+        # Force an immediate refresh so batch sensors reflect the change now
+        # (a debounced request would coalesce with a preceding one).
+        await self.async_refresh()
+        return batch
+
+    async def async_record_weight(
+        self,
+        batch_id: str,
+        weight: float,
+        *,
+        timestamp: float | None = None,
+        note: str | None = None,
+        photo: str | None = None,
+    ) -> None:
+        """Append a weigh-in (with optional note/photo) to a batch."""
+        batch = self.batches.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        ts = timestamp if timestamp is not None else dt_util.utcnow().timestamp()
+        photo_url = await self._save_photo(batch_id, ts, photo) if photo else None
+        batch.add_sample(WeightSample(timestamp=ts, weight=weight, note=note, photo_url=photo_url))
+        self._last_weight = None
+        self._persist_batches()
+        await self.async_refresh()
+
+    async def async_set_reference_batch(self, batch_id: str) -> None:
+        if batch_id not in self.batches:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        self.store.set_reference_batch(batch_id)
+        self.store.async_save()
+        self._last_weight = None
+        await self.async_refresh()
+
+    async def _async_set_batch_status(self, batch_id: str, status: BatchStatus) -> None:
+        batch = self.batches.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        batch.status = status
+        self._persist_batches()
+        await self.async_refresh()
+
+    async def async_complete_batch(self, batch_id: str) -> None:
+        await self._async_set_batch_status(batch_id, BatchStatus.COMPLETED)
+
+    async def async_archive_batch(self, batch_id: str) -> None:
+        await self._async_set_batch_status(batch_id, BatchStatus.ARCHIVED)
+
+    async def async_delete_batch(self, batch_id: str) -> bool:
+        removed = self.batches.pop(batch_id, None) is not None
+        self.store.delete_batch(batch_id)
+        if removed:
+            self.store.async_save()
+            self._last_weight = None
+            await self.async_refresh()
+        return removed
+
+    async def _save_photo(self, batch_id: str, ts: float, photo: str) -> str | None:
+        """Write a weigh-in photo under <config>/www and return its /local URL."""
+        directory = self.hass.config.path("www", PHOTO_WWW_SUBDIR, batch_id)
+        filename = f"{int(ts)}.jpg"
+
+        def _write() -> str | None:
+            data = _photo_bytes(photo)
+            if data is None:
+                return None
+            os.makedirs(directory, exist_ok=True)
+            with open(os.path.join(directory, filename), "wb") as handle:
+                handle.write(data)
+            return f"/local/{PHOTO_WWW_SUBDIR}/{batch_id}/{filename}"
+
+        return await self.hass.async_add_executor_job(_write)
+
+    def _batch_summaries(self, now: float) -> list[dict[str, Any]]:
+        """Serialisable per-batch summary consumed by the sensors and card."""
+        summaries: list[dict[str, Any]] = []
+        for batch in self.batches.values():
+            summaries.append(
+                {
+                    "id": batch.id,
+                    "name": batch.name,
+                    "product": batch.product,
+                    "program_id": batch.program_id,
+                    "status": batch.status.value,
+                    "reference_weight": batch.effective_reference,
+                    "target_loss_pct": batch.target_loss_pct,
+                    "last_weight": batch.latest_weight,
+                    "loss_pct": batch_engine.current_loss_pct(batch),
+                    "drying_rate": batch_engine.drying_rate_pct_per_day(batch),
+                    "eta": batch_engine.estimate_eta(batch, now),
+                    "created_at": batch.created_at,
+                    "samples": [s.to_dict() for s in batch.samples],
+                    "last_photo_url": next(
+                        (s.photo_url for s in reversed(batch.samples) if s.photo_url), None
+                    ),
+                }
+            )
+        return summaries
+
     @property
     def regulation_enabled(self) -> bool:
         return self._regulation_enabled
@@ -601,6 +807,10 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hum_div = divergence(list(inputs.humidity_probes))
         weight_loss = self.program.weight_loss_pct(inputs.weight)
         now = dt_util.utcnow().timestamp()
+        batches = self._batch_summaries(now)
+        ref_id = self.store.reference_batch_id
+        ref_summary = next((b for b in batches if b["id"] == ref_id), None)
+        active_batches = sum(1 for b in batches if b["status"] == BatchStatus.ACTIVE.value)
         dew_point = abs_humidity = None
         if inputs.temp is not None and inputs.humidity is not None:
             dew_point = derived.dew_point(inputs.temp, inputs.humidity)
@@ -621,6 +831,15 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "humidity_divergence": hum_div,
             "weight_loss_pct": weight_loss,
             "drying_rate": inputs.drying_rate,
+            "batches": batches,
+            "reference_batch_id": ref_id,
+            "active_batch_count": active_batches,
+            "reference_batch_loss_pct": ref_summary["loss_pct"] if ref_summary else None,
+            "reference_batch_eta": (
+                dt_util.utc_from_timestamp(ref_summary["eta"])
+                if ref_summary and ref_summary["eta"] is not None
+                else None
+            ),
             "program_status": self.program.status.value,
             "phase_name": (self.program.current_phase.name if self.program.current_phase else None),
             "phase_index": self.program.state.phase_index,

@@ -113,48 +113,113 @@
   },
   "entity": {
     "climate": {
-      "chamber_temperature": { "name": "Temperature" }
+      "chamber_temperature": {
+        "name": "Temperature"
+      }
     },
     "humidifier": {
-      "chamber_humidity": { "name": "Humidity" }
+      "chamber_humidity": {
+        "name": "Humidity"
+      }
     },
     "sensor": {
-      "dew_point": { "name": "Dew point" },
-      "absolute_humidity": { "name": "Absolute humidity" },
-      "weight_loss": { "name": "Weight loss" },
-      "drying_rate": { "name": "Drying rate" },
-      "phase": { "name": "Current phase" },
-      "phase_remaining": { "name": "Phase time remaining" },
-      "regulation_state": { "name": "Regulation state" },
-      "runtime_cool": { "name": "Cooling run time" },
-      "runtime_heat": { "name": "Heating run time" },
-      "runtime_humidify": { "name": "Humidifier run time" },
-      "runtime_dehumidify": { "name": "Dehumidifier run time" },
-      "runtime_fan": { "name": "Fan run time" },
-      "runtime_vent": { "name": "Ventilation run time" }
+      "dew_point": {
+        "name": "Dew point"
+      },
+      "absolute_humidity": {
+        "name": "Absolute humidity"
+      },
+      "weight_loss": {
+        "name": "Weight loss"
+      },
+      "drying_rate": {
+        "name": "Drying rate"
+      },
+      "phase": {
+        "name": "Current phase"
+      },
+      "phase_remaining": {
+        "name": "Phase time remaining"
+      },
+      "regulation_state": {
+        "name": "Regulation state"
+      },
+      "runtime_cool": {
+        "name": "Cooling run time"
+      },
+      "runtime_heat": {
+        "name": "Heating run time"
+      },
+      "runtime_humidify": {
+        "name": "Humidifier run time"
+      },
+      "runtime_dehumidify": {
+        "name": "Dehumidifier run time"
+      },
+      "runtime_fan": {
+        "name": "Fan run time"
+      },
+      "runtime_vent": {
+        "name": "Ventilation run time"
+      },
+      "batches": {
+        "name": "Active batches"
+      },
+      "reference_batch_loss": {
+        "name": "Reference batch weight loss"
+      },
+      "reference_batch_eta": {
+        "name": "Reference batch estimated end"
+      }
     },
     "binary_sensor": {
-      "manual_action_required": { "name": "Manual action required" },
-      "out_of_range": { "name": "Out-of-range alarm" },
-      "sensor_fault": { "name": "Sensor fault" },
-      "sensor_divergence": { "name": "Probe divergence" },
-      "door_open_too_long": { "name": "Door open too long" }
+      "manual_action_required": {
+        "name": "Manual action required"
+      },
+      "out_of_range": {
+        "name": "Out-of-range alarm"
+      },
+      "sensor_fault": {
+        "name": "Sensor fault"
+      },
+      "sensor_divergence": {
+        "name": "Probe divergence"
+      },
+      "door_open_too_long": {
+        "name": "Door open too long"
+      }
     },
     "switch": {
-      "regulation": { "name": "Regulation" },
-      "maintenance": { "name": "Maintenance mode" }
+      "regulation": {
+        "name": "Regulation"
+      },
+      "maintenance": {
+        "name": "Maintenance mode"
+      }
     },
     "select": {
-      "program": { "name": "Program" }
+      "program": {
+        "name": "Program"
+      }
     },
     "button": {
-      "next_phase": { "name": "Next phase" },
-      "set_reference_weight": { "name": "Set reference weight" },
-      "acknowledge_alert": { "name": "Acknowledge alerts" }
+      "next_phase": {
+        "name": "Next phase"
+      },
+      "set_reference_weight": {
+        "name": "Set reference weight"
+      },
+      "acknowledge_alert": {
+        "name": "Acknowledge alerts"
+      }
     },
     "number": {
-      "manual_temperature": { "name": "Manual temperature target" },
-      "manual_humidity": { "name": "Manual humidity target" }
+      "manual_temperature": {
+        "name": "Manual temperature target"
+      },
+      "manual_humidity": {
+        "name": "Manual humidity target"
+      }
     }
   }
 }

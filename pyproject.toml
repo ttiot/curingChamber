@@ -13,7 +13,11 @@ asyncio_mode = "auto"
 addopts = "-q"
 
 [tool.coverage.run]
-source = ["custom_components/curing_chamber/regulation", "custom_components/curing_chamber/program"]
+source = [
+    "custom_components/curing_chamber/regulation",
+    "custom_components/curing_chamber/program",
+    "custom_components/curing_chamber/batch",
+]
 branch = true
 
 [tool.coverage.report]
@@ -54,6 +58,7 @@ follow_imports = "silent"
 files = [
     "custom_components/curing_chamber/regulation",
     "custom_components/curing_chamber/program",
+    "custom_components/curing_chamber/batch",
 ]
 
 [[tool.mypy.overrides]]
