@@ -1,7 +1,7 @@
 {
   "domain": "curing_chamber",
   "name": "Curing Chamber",
-  "after_dependencies": ["http"],
+  "after_dependencies": ["http", "frontend"],
   "codeowners": ["@ttiot"],
   "config_flow": true,
   "documentation": "https://github.com/ttiot/curingchamber",

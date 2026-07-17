@@ -24,6 +24,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Custom Lovelace card** (`curing-chamber-card`, auto-registered): drying
   curve, loss gauge, ETA and an inline weigh-in + photo form.
 
+### Fixed
+- **Card auto-load reliability ("Configuration error").** Declare `frontend` as
+  an after-dependency so the module-URL registry exists when the card is
+  registered, cache-bust the card's module URL by its file mtime so browsers and
+  the frontend service worker pick up updates instead of a stale copy, and log a
+  visible warning (with the manual-resource fallback) when auto-load fails
+  instead of swallowing it silently. The card's *unknown entity* note now spells
+  out the expected `sensor.<chamber>_active_batches` name. Added a troubleshooting
+  section (EN/FR) for the "Configuration error" symptom.
+
 ## [0.1.0] - 2026-07-14
 
 ### Added

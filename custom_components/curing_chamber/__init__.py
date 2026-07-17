@@ -34,9 +34,32 @@ except ImportError:  # pragma: no cover - older cores use the sync API
     StaticPathConfig = None  # type: ignore[assignment,misc]
 
 
+def _card_module_url() -> str:
+    """Auto-load URL for the card, cache-busted by the bundled file's mtime.
+
+    The static route serves the raw file; the query string only changes when
+    the card itself changes, so browsers and the frontend service worker fetch
+    the new module after an update instead of a stale cached copy (aiohttp
+    ignores the query string when matching the static path).
+    """
+    try:
+        version = int(os.path.getmtime(_CARD_PATH))
+    except OSError:  # pragma: no cover - unreadable file, fall back to plain URL
+        return _CARD_URL
+    return f"{_CARD_URL}?v={version}"
+
+
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Serve and register the bundled Lovelace card (best-effort, once)."""
-    if hass.data.get(_FRONTEND_KEY) or add_extra_js_url is None:
+    if hass.data.get(_FRONTEND_KEY):
+        return
+    if add_extra_js_url is None:
+        _LOGGER.warning(
+            "Curing Chamber card not auto-loaded (frontend helper unavailable). "
+            "Add it manually under Settings > Dashboards > Resources: "
+            "URL %s, type 'JavaScript Module'.",
+            _CARD_URL,
+        )
         return
     http = getattr(hass, "http", None)
     if http is None:
@@ -46,10 +69,18 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             await http.async_register_static_paths([StaticPathConfig(_CARD_URL, _CARD_PATH, False)])
         else:
             http.register_static_path(_CARD_URL, _CARD_PATH, False)
-        add_extra_js_url(hass, _CARD_URL)
+        add_extra_js_url(hass, _card_module_url())
         hass.data[_FRONTEND_KEY] = True
+        _LOGGER.debug("Curing Chamber card served at %s", _CARD_URL)
     except Exception:  # the bundled card must never break integration setup
-        _LOGGER.debug("Curing Chamber frontend card not registered", exc_info=True)
+        # Surface it: a swallowed failure here is exactly what shows up later as
+        # a Lovelace "Configuration error" (the custom element never loads).
+        _LOGGER.warning(
+            "Curing Chamber card could not be auto-loaded. Add it manually under "
+            "Settings > Dashboards > Resources: URL %s, type 'JavaScript Module'.",
+            _CARD_URL,
+            exc_info=True,
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -52,7 +52,10 @@ class CuringChamberCard extends HTMLElement {
         : null;
 
     if (!stateObj) {
-      this._body.innerHTML = `<div class="empty">Unknown entity: ${this._config.entity}</div>`;
+      this._body.innerHTML =
+        `<div class="empty">Unknown entity: <code>${this._escape(this._config.entity)}</code>.` +
+        ` Set <code>entity</code> to your chamber's active-batches sensor` +
+        ` (it is named <code>sensor.&lt;chamber&gt;_active_batches</code>).</div>`;
       return;
     }
     this._title.textContent = this._config.title || "Curing chamber — batches";

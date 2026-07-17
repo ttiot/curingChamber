@@ -315,6 +315,28 @@ or on the `binary_sensor.*_manual_action_required` state.
   duration cap.
 - **After a restart the program resumed at the wrong time.** It shouldn't — the
   phase clock is persisted. File an issue with your diagnostics download.
+- **The card shows "Configuration error" (`Erreur de configuration`).** That
+  message means Home Assistant can't find the `curing-chamber-card` custom
+  element yet — the card's JavaScript isn't loaded in your browser; it is *not*
+  a problem with the YAML you pasted. Fix it in this order:
+  1. **Restart Home Assistant** after installing/updating the integration. The
+     card is auto-registered during setup, so it only becomes available on the
+     next full frontend load.
+  2. **Hard-refresh the browser** (Ctrl/Cmd + Shift + R), or empty the cache —
+     the HA frontend service worker caches aggressively and can keep serving a
+     page that predates the card.
+  3. **Check the entity name.** The example uses
+     `sensor.curing_chamber_active_batches`, which assumes a chamber named
+     *Curing Chamber*. If you named yours differently the sensor is
+     `sensor.<your_chamber>_active_batches` — a wrong name shows an *"Unknown
+     entity"* note inside the card (not a configuration error).
+  4. **Still failing?** Confirm the JS is served: open
+     `https://<your-ha>/curing_chamber/curing-chamber-card.js` — it should
+     return JavaScript, not a 404. If auto-load didn't happen, add it manually
+     under **Settings → Dashboards → Resources → Add resource**, URL
+     `/curing_chamber/curing-chamber-card.js`, type **JavaScript Module**, then
+     hard-refresh. Check **Settings → System → Logs** for a `curing_chamber`
+     warning explaining why registration failed.
 
 Download **Diagnostics** from the device page for a full, anonymized state dump
 (config, last decisions, counters, active alerts).
@@ -554,6 +576,29 @@ entity: sensor.curing_chamber_active_batches
 - **Le programme n'avance pas sur la perte de poids.** Définissez d'abord le
   poids de référence (bouton ou `set_reference_weight`) et vérifiez qu'une
   balance est configurée. Sans balance, la phase retombe sur son plafond de durée.
+- **La carte affiche « Erreur de configuration ».** Ce message signifie que Home
+  Assistant ne trouve pas encore l'élément personnalisé `curing-chamber-card` :
+  le JavaScript de la carte n'est pas chargé dans votre navigateur — ce n'est
+  *pas* un problème du YAML collé. Corrigez dans cet ordre :
+  1. **Redémarrez Home Assistant** après l'installation/mise à jour. La carte
+     est auto-enregistrée au démarrage de l'intégration ; elle n'est disponible
+     qu'au prochain chargement complet du frontend.
+  2. **Forcez le rechargement du navigateur** (Ctrl/Cmd + Maj + R) ou videz le
+     cache — le service worker du frontend HA met fortement en cache et peut
+     continuer à servir une page antérieure à la carte.
+  3. **Vérifiez le nom de l'entité.** L'exemple utilise
+     `sensor.curing_chamber_active_batches`, qui suppose une enceinte nommée
+     *Curing Chamber*. Si vous l'avez nommée autrement, le capteur est
+     `sensor.<votre_enceinte>_active_batches` — un mauvais nom affiche une note
+     *« Unknown entity »* dans la carte (et non une erreur de configuration).
+  4. **Toujours en échec ?** Vérifiez que le JS est bien servi : ouvrez
+     `https://<votre-ha>/curing_chamber/curing-chamber-card.js` — cela doit
+     renvoyer du JavaScript, pas une erreur 404. Si l'auto-chargement n'a pas eu
+     lieu, ajoutez-le manuellement dans **Paramètres → Tableaux de bord →
+     Ressources → Ajouter**, URL `/curing_chamber/curing-chamber-card.js`, type
+     **Module JavaScript**, puis rechargez de force. Consultez **Paramètres →
+     Système → Journaux** : un avertissement `curing_chamber` explique tout
+     échec d'enregistrement.
 
 Téléchargez les **Diagnostics** depuis la page de l'appareil pour un export
 complet et anonymisé (config, dernières décisions, compteurs, alertes actives).
