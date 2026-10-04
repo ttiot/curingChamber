@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-04
+
+### Added
+- Brand icon (`custom_components/curing_chamber/brand/icon.png`, `icon@2x.png`)
+  so the integration shows an icon in Home Assistant and HACS.
+
+### Changed
+- `hacs.json` declares the minimum Home Assistant version (**2024.7.0**, needed
+  for `async_register_static_paths`) and renders the README in HACS.
+- HACS validation now runs without any ignored check (brands, topics,
+  description), as required for inclusion in the HACS default store.
+
 ## [0.3.0] - 2026-10-04
 
 ### Added
@@ -86,7 +98,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ttiot/curingChamber/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ttiot/curingChamber/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ttiot/curingChamber/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ttiot/curingChamber/releases/tag/v0.1.0

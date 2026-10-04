@@ -17,10 +17,3 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
-          # These checks only gate inclusion in the HACS *default* store, not
-          # installation via a custom repository:
-          #   - brands: requires assets submitted to home-assistant/brands
-          #   - topics/description: repository "About" metadata (owner setting)
-          # Set the repo description + topics and submit to brands, then drop
-          # these ignores, to make the integration default-store ready.
-          ignore: brands topics description
