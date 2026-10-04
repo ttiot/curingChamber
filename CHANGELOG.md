@@ -6,18 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-04
+
 ### Added
-- **Product batches.** Track one or more products curing in a chamber, each with
-  its reference weight, target weight loss and a **weigh-in history**. Weigh-ins
-  can be recorded by hand (**no scale required**) with an optional note and photo.
-- **Predictive ETA.** A pure `batch` engine derives each batch's current weight
-  loss, a least-squares drying rate and a projected completion date.
-- **Reference batch.** The designated reference batch's latest weigh-in drives
-  the running program's weight-loss phase end, falling back to the chamber scale
-  so existing setups are unaffected. Batches reaching their target auto-complete
-  and emit a `batch_completed` event.
-- **Services:** `create_batch`, `record_weight`, `set_reference_batch`,
-  `complete_batch`, `archive_batch`, `delete_batch`.
 - **Sidebar panel** (`curing-chamber-panel`, registered by the integration —
   works on every install type, including HA Container): Chamber view (gauges,
   actuators, program timeline and controls, alerts, regulation decisions),
@@ -30,26 +21,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   batches (list/get/create/set_status/set_reference/delete), `weigh_in`
   (+ `weigh_in/delete`), programs (list/validate/save/delete). Services stay for
   automations.
-- **Private photos.** Weigh-in photos now live under
-  `<config>/.storage/curing_chamber/photos/` and are served only to logged-in
-  users by an authenticated view (`/api/curing_chamber/photo/…`); the card and
-  panel sign the URL. Photos previously written under the public `www/` folder
-  are migrated automatically.
-- **Sensors:** active batches (with a light per-batch `batches` attribute and
-  the `entry_id`), reference batch weight loss, and reference batch estimated
-  end. The weigh-in history, regulation decisions and alert details are kept
-  out of the recorder database (`_unrecorded_attributes`) and archived batches
-  are left out of the attribute, so the state stays well under the recorder's
-  attribute size limit.
-- **Custom Lovelace card** (`curing-chamber-card`, auto-registered): drying
-  curve, loss gauge, ETA and an inline weigh-in + photo form. The card and the
-  panel JS are served with the integration version in the URL so browsers pick
-  up new versions after an update.
 - **Manual weight `number` entity.** Type a weigh-in straight from the HA UI
   (device page, entities card, mobile app): it is recorded on the reference
   batch, or — with no batch — remembered as the chamber weight so *Set reference
   weight*, the *Weight loss* sensor and `weight_loss` phases work without a
   scale. Weight resolution order is now reference batch → scale → manual entry.
+
+### Changed
+- **Private photos.** Weigh-in photos now live under
+  `<config>/.storage/curing_chamber/photos/` and are served only to logged-in
+  users by an authenticated view (`/api/curing_chamber/photo/…`); the card and
+  panel sign the URL. Photos previously written under the public `www/` folder
+  are migrated automatically on startup.
+- **Recorder footprint.** The active-batches sensor's `batches` attribute is now
+  a light summary (no weigh-in history, no archived batches) and carries the
+  `entry_id`; weigh-in history, regulation decisions and alert details are kept
+  out of the recorder database (`_unrecorded_attributes`).
+- **Card.** Loads the weigh-in history over websocket and downscales photos in
+  the browser. Card and panel JS URLs carry the integration version so browsers
+  pick up new files after an update.
+- Release workflow runs once per published release (no more duplicated notes).
+
+## [0.2.0] - 2026-07-15
+
+### Added
+- **Product batches.** Track one or more products curing in a chamber, each with
+  its reference weight, target weight loss and a **weigh-in history**. Weigh-ins
+  can be recorded by hand (**no scale required**) with an optional note and photo.
+- **Predictive ETA.** A pure `batch` engine derives each batch's current weight
+  loss, a least-squares drying rate and a projected completion date.
+- **Reference batch.** The designated reference batch's latest weigh-in drives
+  the running program's weight-loss phase end, falling back to the chamber scale
+  so existing setups are unaffected. Batches reaching their target auto-complete
+  and emit a `batch_completed` event.
+- **Services:** `create_batch`, `record_weight`, `set_reference_batch`,
+  `complete_batch`, `archive_batch`, `delete_batch`.
+- **Sensors:** active batches (with a per-batch `batches` attribute), reference
+  batch weight loss, and reference batch estimated end.
+- **Custom Lovelace card** (`curing-chamber-card`, auto-registered): drying
+  curve, loss gauge, ETA and an inline weigh-in + photo form.
+
+### Fixed
+- HACS validation: LICENSE file, corrected `hacs.json`, store-only checks skipped.
 
 ## [0.1.0] - 2026-07-14
 
@@ -73,5 +86,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ttiot/curingChamber/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/ttiot/curingChamber/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ttiot/curingChamber/releases/tag/v0.1.0
