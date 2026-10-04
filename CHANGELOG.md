@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-04
+
+### Added
+- Panel: **Add a chamber** button (header and empty state, admins only) that
+  opens the integration's config flow directly.
+- Websocket `curing_chamber/subscribe_chambers`: pushes the chamber list on
+  subscribe and whenever a chamber is loaded, unloaded or renamed.
+
+### Changed
+- Panel: the chamber selector now follows that subscription, so chambers added,
+  renamed or removed while the panel is open appear without a page reload. A
+  chamber that disappears briefly (options reload) keeps its selection.
+
 ## [0.3.1] - 2026-10-04
 
 ### Added
@@ -98,7 +111,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ttiot/curingChamber/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ttiot/curingChamber/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ttiot/curingChamber/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ttiot/curingChamber/compare/v0.1.0...v0.2.0

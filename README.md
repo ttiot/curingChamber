@@ -268,9 +268,12 @@ active theme. Four views:
    their final loss, duration and mean drying rate to tune your recipes.
 
 With several chambers, a selector in the header switches between them. The
-panel talks to the integration over websocket (`curing_chamber/*` commands,
-see `websocket.py`); every action remains available as a service for
-automations.
+list is live: a chamber added, renamed or removed (from the panel or from
+Settings) shows up without reloading the page. Administrators also get a **+**
+button in the header (and in the empty state) that opens the integration's
+add-chamber flow directly. The panel talks to the integration over websocket
+(`curing_chamber/*` commands, see `websocket.py`); every action remains
+available as a service for automations.
 
 ### Custom card
 

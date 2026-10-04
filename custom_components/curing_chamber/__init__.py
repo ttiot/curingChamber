@@ -7,6 +7,7 @@ import os
 from typing import TYPE_CHECKING
 
 from homeassistant.const import Platform
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.loader import async_get_integration
 
 from .const import (
@@ -19,6 +20,7 @@ from .const import (
     PANEL_URL_PATH,
     PANEL_WEBCOMPONENT,
     PLATFORMS,
+    SIGNAL_CHAMBERS_CHANGED,
 )
 from .coordinator import CuringChamberCoordinator
 from .services import async_setup_services, async_unload_services
@@ -127,6 +129,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async_setup_services(hass)
     version = await _async_register_static(hass)
     await _async_register_panel(hass, version)
+    async_dispatcher_send(hass, SIGNAL_CHAMBERS_CHANGED)
     return True
 
 
@@ -144,4 +147,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not hass.data[DOMAIN]:
             async_unload_services(hass)
             _async_remove_panel(hass)
+        async_dispatcher_send(hass, SIGNAL_CHAMBERS_CHANGED)
     return unloaded

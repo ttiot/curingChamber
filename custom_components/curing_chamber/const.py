@@ -148,6 +148,9 @@ PANEL_WEBCOMPONENT: Final = "curing-chamber-panel"
 PANEL_TITLE: Final = "Curing Chamber"
 PANEL_ICON: Final = "mdi:sausage"
 
+# Dispatcher signal fired when a chamber is loaded or unloaded (panel chamber list).
+SIGNAL_CHAMBERS_CHANGED: Final = f"{DOMAIN}_chambers_changed"
+
 # Platforms managed by this integration.
 PLATFORMS: Final = [
     "binary_sensor",

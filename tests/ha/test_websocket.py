@@ -107,6 +107,35 @@ async def test_subscribe_pushes_live_state(
     assert "samples" not in pushed[-1]["batches"][0]
 
 
+async def test_subscribe_chambers_pushes_on_load_and_unload(
+    hass: HomeAssistant, config_entry, seed_states, hass_ws_client
+) -> None:
+    await _setup(hass, config_entry, seed_states)
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id({"type": f"{DOMAIN}/subscribe_chambers"})
+    msg = await client.receive_json()
+    assert msg["success"]
+    sub_id = msg["id"]
+    first = await client.receive_json()
+    assert first["type"] == "event" and first["id"] == sub_id
+    assert [c["entry_id"] for c in first["event"]] == [config_entry.entry_id]
+    assert first["event"][0]["name"] == "Test Chamber"
+
+    # Unloading the last chamber pushes an empty list...
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    gone = await client.receive_json()
+    assert gone["type"] == "event" and gone["event"] == []
+
+    # ...and loading it again pushes it back (same path as adding a chamber).
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    back = await client.receive_json()
+    assert back["type"] == "event"
+    assert [c["entry_id"] for c in back["event"]] == [config_entry.entry_id]
+
+
 async def test_batch_listing_and_sensor_attributes(
     hass: HomeAssistant, config_entry, seed_states, hass_ws_client
 ) -> None:
