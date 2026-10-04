@@ -15,9 +15,10 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .batch import BatchStatus
-from .const import DOMAIN
+from .const import DOMAIN, SIGNAL_CHAMBERS_CHANGED
 from .program.presets import preset_by_id
 from .program.schema import ProgramValidationError, validate_program
 
@@ -44,9 +45,8 @@ def _coordinator(
 # -- Chambers & live state ---------------------------------------------------
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/chambers"})
-@callback
-def ws_chambers(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+def _chambers(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Describe every loaded chamber (the panel's selector)."""
     registry = dr.async_get(hass)
     chambers = []
     for entry_id, coordinator in hass.data.get(DOMAIN, {}).items():
@@ -59,7 +59,31 @@ def ws_chambers(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str
                 "has_scale": coordinator.has_scale,
             }
         )
-    connection.send_result(msg["id"], chambers)
+    return chambers
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/chambers"})
+@callback
+def ws_chambers(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+    connection.send_result(msg["id"], _chambers(hass))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/subscribe_chambers"})
+@callback
+def ws_subscribe_chambers(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Push the chamber list now and whenever a chamber is (un)loaded or renamed."""
+
+    @callback
+    def _push() -> None:
+        connection.send_message(websocket_api.event_message(msg["id"], _chambers(hass)))
+
+    connection.subscriptions[msg["id"]] = async_dispatcher_connect(
+        hass, SIGNAL_CHAMBERS_CHANGED, _push
+    )
+    connection.send_result(msg["id"])
+    _push()
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state", **_ENTRY})
@@ -332,6 +356,7 @@ async def ws_program_delete(
 
 _COMMANDS = (
     ws_chambers,
+    ws_subscribe_chambers,
     ws_state,
     ws_subscribe,
     ws_batches,

@@ -32,7 +32,9 @@ const STR = {
     tab_batches: "Batches",
     tab_programs: "Programs",
     tab_history: "History",
-    no_chambers: "No curing chamber is configured yet. Add one from Settings → Devices & services.",
+    no_chambers: "No curing chamber is configured yet.",
+    no_chambers_hint: "Ask an administrator to add one from Settings → Devices & services.",
+    add_chamber: "Add a chamber",
     loading: "Loading…",
     temperature: "Temperature",
     humidity: "Humidity",
@@ -177,7 +179,9 @@ const STR = {
     tab_batches: "Lots",
     tab_programs: "Programmes",
     tab_history: "Historique",
-    no_chambers: "Aucun séchoir configuré. Ajoutez-en un dans Paramètres → Appareils et services.",
+    no_chambers: "Aucun séchoir configuré.",
+    no_chambers_hint: "Demandez à un administrateur d'en ajouter un dans Paramètres → Appareils et services.",
+    add_chamber: "Ajouter un séchoir",
     loading: "Chargement…",
     temperature: "Température",
     humidity: "Hygrométrie",
@@ -506,6 +510,9 @@ const STYLES = `
   .toolbar select { max-width: 45vw; background: transparent; color: inherit; border: 1px solid currentColor;
     border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 14px; }
   .toolbar select option { color: var(--primary-text-color); background: var(--card-background-color); }
+  .toolbar button.icon-btn { flex: 0 0 auto; width: 34px; height: 34px; padding: 0; background: transparent; color: inherit;
+    border: 1px solid currentColor; border-radius: 6px; font-size: 22px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center; }
   .tabs { display: flex; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tab { flex: 1 0 auto; min-width: 90px; text-align: center; padding: 12px 16px; cursor: pointer; opacity: .75;
@@ -642,6 +649,8 @@ class CuringChamberPanel extends HTMLElement {
     this._editing = null; // {program, isNew}
     this._compareIds = new Set();
     this._unsub = null;
+    this._unsubChambers = null;
+    this._vanishedTimer = null;
     this._signed = new Map();
     this._initialised = false;
     this._loadSeq = 0;
@@ -662,6 +671,7 @@ class CuringChamberPanel extends HTMLElement {
     }
     if (first && this.isConnected) this._init();
     else if (this._menuButton) this._menuButton.hass = hass;
+    if (this._addButton) this._addButton.hidden = !this._isAdmin;
     // Cheap refresh: switch toggles depend on entity states.
     if (!first && this._tab === "chamber") this._syncSwitches();
   }
@@ -690,6 +700,10 @@ class CuringChamberPanel extends HTMLElement {
 
   disconnectedCallback() {
     this._unsubscribe();
+    this._unsubscribeChambers();
+    this._clearVanished();
+    // Forget the list so the next connection reloads the selected chamber.
+    this._chambers = null;
     this._initialised = false;
   }
 
@@ -716,9 +730,15 @@ class CuringChamberPanel extends HTMLElement {
       "aria-label": "chamber",
     });
     this._chamberSelect.hidden = true;
+    this._addButton = h("button", {
+      class: "icon-btn",
+      type: "button",
+      onclick: () => this._addChamber(),
+    }, "+");
+    this._addButton.hidden = true;
     this._tabsEl = h("div", { class: "tabs", role: "tablist" });
     this._header = h("div", { class: "app-header" }, [
-      h("div", { class: "toolbar" }, [this._menuButton, this._titleEl, this._chamberSelect]),
+      h("div", { class: "toolbar" }, [this._menuButton, this._titleEl, this._chamberSelect, this._addButton]),
       this._tabsEl,
     ]);
     this._content = h("div", { class: "content" });
@@ -734,6 +754,10 @@ class CuringChamberPanel extends HTMLElement {
   _renderHeader() {
     const t = (k) => this._t(k);
     this._titleEl.textContent = t("title");
+    if (this._addButton) {
+      this._addButton.title = t("add_chamber");
+      this._addButton.setAttribute("aria-label", t("add_chamber"));
+    }
     clear(this._tabsEl);
     for (const tab of TABS) {
       this._tabsEl.appendChild(
@@ -799,20 +823,70 @@ class CuringChamberPanel extends HTMLElement {
     return (this._chambers || []).find((c) => c.entry_id === this._entryId) || null;
   }
 
+  get _isAdmin() {
+    return Boolean(this._hass && this._hass.user && this._hass.user.is_admin);
+  }
+
   async _init() {
     this._initialised = true;
     try {
-      this._chambers = await this._hass.callWS({ type: "curing_chamber/chambers" });
+      const unsub = await this._hass.connection.subscribeMessage(
+        (chambers) => this._onChambers(chambers),
+        { type: "curing_chamber/subscribe_chambers" },
+      );
+      if (!this.isConnected) unsub();
+      else this._unsubChambers = unsub;
     } catch (err) {
-      this._chambers = [];
+      this._onChambers([]);
       this._showError(err);
     }
-    if (!this._chambers.some((c) => c.entry_id === this._entryId)) {
-      this._entryId = this._chambers.length ? this._chambers[0].entry_id : null;
+  }
+
+  _unsubscribeChambers() {
+    if (this._unsubChambers) {
+      try {
+        this._unsubChambers();
+      } catch (_err) {
+        /* connection may already be gone */
+      }
+      this._unsubChambers = null;
     }
-    this._renderChamberSelect();
-    this._renderTab();
-    if (this._entryId) await this._loadChamber();
+  }
+
+  _clearVanished() {
+    if (this._vanishedTimer != null) {
+      clearTimeout(this._vanishedTimer);
+      this._vanishedTimer = null;
+    }
+  }
+
+  /** The backend pushed the chamber list (on subscribe, then on every (un)load). */
+  _onChambers(chambers) {
+    const first = this._chambers === null;
+    this._chambers = Array.isArray(chambers) ? chambers : [];
+    const current = this._entryId;
+    const present = Boolean(current) && this._chambers.some((c) => c.entry_id === current);
+    if (present) {
+      const reappeared = this._vanishedTimer != null;
+      this._clearVanished();
+      this._renderChamberSelect();
+      if (first || reappeared) this._switchTo(current);
+      else this._renderTab(); // a rename only
+    } else if (first || !current) {
+      this._clearVanished();
+      this._switchTo(this._chambers.length ? this._chambers[0].entry_id : null);
+    } else if (this._vanishedTimer == null) {
+      // The selected chamber vanished — most likely a reload after an options
+      // change. Hold the selection briefly so it comes back without switching.
+      this._unsubscribe();
+      this._vanishedTimer = setTimeout(() => {
+        this._vanishedTimer = null;
+        const list = this._chambers || [];
+        if (!list.some((c) => c.entry_id === this._entryId)) {
+          this._switchTo(list.length ? list[0].entry_id : null);
+        }
+      }, 4000);
+    }
   }
 
   _renderChamberSelect() {
@@ -823,21 +897,42 @@ class CuringChamberPanel extends HTMLElement {
     for (const c of chambers) {
       sel.appendChild(h("option", { value: c.entry_id, selected: c.entry_id === this._entryId }, c.name));
     }
-    if (chambers.length === 1) this._titleEl.textContent = `${this._t("title")} · ${chambers[0].name}`;
+    this._titleEl.textContent =
+      chambers.length === 1 ? `${this._t("title")} · ${chambers[0].name}` : this._t("title");
+    if (this._addButton) this._addButton.hidden = !this._isAdmin;
   }
 
   async _selectChamber(entryId) {
     if (entryId === this._entryId) return;
-    this._entryId = entryId;
-    lsSet(LS_CHAMBER, entryId);
+    this._clearVanished();
+    await this._switchTo(entryId);
+  }
+
+  /** Make `entryId` (or none) the displayed chamber and (re)load its data. */
+  async _switchTo(entryId) {
+    this._entryId = entryId || null;
+    if (entryId) lsSet(LS_CHAMBER, entryId);
     this._state = null;
     this._batches = [];
     this._programs = [];
     this._detailBatchId = null;
+    this._newBatch = false;
     this._editing = null;
     this._compareIds = new Set();
+    this._renderChamberSelect();
     this._renderTab();
-    await this._loadChamber();
+    if (this._entryId) await this._loadChamber();
+    else {
+      this._loadSeq++;
+      this._unsubscribe();
+    }
+  }
+
+  /** Open Home Assistant's "add integration" flow for this domain (admins only). */
+  _addChamber() {
+    const path = "/config/integrations/dashboard/add?domain=curing_chamber";
+    history.pushState(null, "", path);
+    window.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true, detail: { replace: false } }));
   }
 
   async _loadChamber() {
@@ -974,7 +1069,12 @@ class CuringChamberPanel extends HTMLElement {
       return;
     }
     if (!this._chambers.length || !this._entryId) {
-      c.appendChild(h("div", { class: "empty" }, this._t("no_chambers")));
+      c.appendChild(h("div", { class: "empty" }, [
+        h("p", null, this._t("no_chambers")),
+        this._isAdmin
+          ? h("button", { type: "button", onclick: () => this._addChamber() }, this._t("add_chamber"))
+          : h("p", null, this._t("no_chambers_hint")),
+      ]));
       return;
     }
     switch (this._tab) {
