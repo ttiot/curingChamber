@@ -37,6 +37,7 @@ src = ["custom_components", "tests"]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PL", "RUF"]
 ignore = [
     "PLR0913",  # many arguments: control logic legitimately takes several tuning knobs
+    "PLR0917",  # many positional arguments: same reasoning (newer ruff rule)
     "PLR0912",  # many branches: the engine is inherently branchy
     "PLR0911",  # many returns
     "PLR2004",  # magic values in tests/formulas
