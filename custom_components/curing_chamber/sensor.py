@@ -105,6 +105,7 @@ SENSORS: tuple[CuringSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.get("active_batch_count"),
         attrs_fn=lambda d: {
+            "entry_id": d.get("entry_id"),
             "batches": d.get("batches"),
             "reference_batch_id": d.get("reference_batch_id"),
         },
@@ -149,6 +150,10 @@ async def async_setup_entry(
 
 class CuringChamberSensor(CuringChamberEntity, SensorEntity):
     """A sensor exposing one derived/progress value."""
+
+    # Bulky, fast-changing JSON blobs stay out of the recorder database: they
+    # are UI data (card/panel), not history worth storing on every tick.
+    _unrecorded_attributes = frozenset({"batches", "last_decisions", "alert_details"})
 
     entity_description: CuringSensorDescription
 

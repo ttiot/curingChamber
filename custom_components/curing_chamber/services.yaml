@@ -240,7 +240,8 @@ record_weight:
       name: Photo
       description: >-
         Optional photo as a data URL, base64 string, or a local file path;
-        stored under /config/www and served at /local/curing_chamber/...
+        stored privately under /config/.storage/curing_chamber/photos and
+        served only to logged-in users at /api/curing_chamber/photo/...
       selector:
         text:
 

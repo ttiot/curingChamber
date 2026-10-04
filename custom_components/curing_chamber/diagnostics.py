@@ -74,7 +74,7 @@ async def async_get_config_entry_diagnostics(
                     "loss_pct": b.get("loss_pct"),
                     "drying_rate": b.get("drying_rate"),
                     "eta": b.get("eta"),
-                    "sample_count": len(b.get("samples") or []),
+                    "sample_count": b.get("sample_count"),
                 }
                 for b in (data.get("batches") or [])
             ],

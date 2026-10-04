@@ -109,9 +109,13 @@ async def test_record_weight_with_photo(hass: HomeAssistant, config_entry, seed_
     sample = coordinator.batches[batch_id].latest_sample
     assert sample is not None
     assert sample.photo_url is not None
-    assert sample.photo_url.startswith(f"/local/curing_chamber/{batch_id}/")
-    on_disk = hass.config.path(sample.photo_url.replace("/local/", "www/"))
+    # Photos are private: stored outside www/ and served by an authenticated view.
+    assert sample.photo_url.startswith(
+        f"/api/curing_chamber/photo/{config_entry.entry_id}/{batch_id}/"
+    )
+    on_disk = coordinator.photo_path(batch_id, sample.photo_url.rsplit("/", 1)[-1])
     assert os.path.isfile(on_disk)
+    assert not os.path.exists(hass.config.path("www", "curing_chamber", batch_id))
 
 
 async def test_set_reference_batch_drives_completion(

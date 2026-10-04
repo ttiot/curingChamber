@@ -44,9 +44,13 @@ diagnostics, and full FR/EN translations.
   the reference batch drives the program's weight-loss phase.
 - **Derived sensors:** dew point (Magnus), absolute humidity, weight loss %,
   drying rate %/day.
+- **Sidebar panel** (no YAML): live gauges and regulation decisions, batch
+  cards with drying curves, weigh-in and photo capture from your phone, a
+  visual multi-phase program editor and a history view comparing finished
+  batches. Multi-chamber aware.
 - **Native entities** (`climate`, `humidifier`, `sensor`, `binary_sensor`,
-  `switch`, `select`, `button`, `number`), services, bus events and a bundled
-  **custom Lovelace card**.
+  `switch`, `select`, `button`, `number`), services, a websocket API, bus
+  events and a bundled **custom Lovelace card**.
 
 ---
 
@@ -108,6 +112,7 @@ timers, absolute limits, degraded-mode delays…) and **Notifications**.
 | `switch` | Maintenance mode | Everything off, no alerts |
 | `button` | Next phase / Set reference weight / Acknowledge alerts | — |
 | `number` | Manual temperature / humidity target | Synced with climate/humidifier |
+| `number` | Manual weight | Type a weigh-in from the UI: recorded on the reference batch, or used as chamber weight when there is no scale |
 
 ---
 
@@ -219,14 +224,53 @@ data:
   photo: "/config/www/photos/coppa_day12.jpg"   # path, base64 or data: URL
 ```
 
-Photos are stored under `<config>/www/curing_chamber/<batch_id>/` and served at
-`/local/curing_chamber/<batch_id>/…`. Other batch services:
+Photos are stored **privately** under
+`<config>/.storage/curing_chamber/photos/<entry_id>/<batch_id>/` and served only to
+logged-in users at `/api/curing_chamber/photo/…` (the panel and card sign the
+URL before displaying it). Photos saved by earlier versions under the public
+`www/` folder are moved there automatically on startup. Other batch services:
 `set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`.
 
-New sensors: **Active batches** (with a `batches` attribute carrying every
-batch's loss/rate/ETA/photo — the data source for the card below),
-**Reference batch weight loss** (%) and **Reference batch estimated end** (a
-timestamp).
+**Typing a weight from the UI.** Every chamber exposes a **Manual weight**
+`number` entity (`number.<chamber>_manual_weight`). Enter a value from the
+device page, an entities card or the mobile app and it is recorded as a weigh-in
+on the **reference batch**. With no batch at all, the value becomes the chamber
+weight: press *Set reference weight* once, then each new entry feeds the
+*Weight loss* sensor and `weight_loss` program phases — no scale and no YAML
+needed. The entity displays the weight currently in use, with its `source`
+(`batch`, `scale` or `manual`) in the attributes.
+
+New sensors: **Active batches** (with a light `batches` attribute: loss, rate,
+ETA and latest photo of each non-archived batch, plus the `entry_id` the card
+uses to fetch the weigh-in history over websocket — the history itself is kept
+out of the recorder database), **Reference batch weight loss** (%) and
+**Reference batch estimated end** (a timestamp).
+
+### Sidebar panel
+
+Once a chamber is configured, a **Curing Chamber** entry appears in the sidebar
+(works on every install type, including Home Assistant Container — no add-on,
+no ingress). It is available to all users, not only admins, and follows the
+active theme. Four views:
+
+1. **Chamber** — T° / RH / dew-point gauges with targets, actuator states and
+   run-hours, the running program with its phase timeline (start / pause /
+   next phase / stop), manual targets, regulation & maintenance toggles,
+   active alerts with the recommended manual action, last regulation decisions.
+2. **Batches** — active and completed batches, drying curve with the target
+   line and the ETA projection, weigh-in history (deletable), chronological
+   photo gallery, a weigh-in form with direct camera capture (photos are
+   downscaled in the browser), create / reference / complete / archive / delete.
+3. **Programs** — visual editor for multi-phase programs: duplicate a preset,
+   edit phases (targets, end condition, duration, weight loss), live
+   validation, save, delete, start.
+4. **History** — overlay the drying curves of finished batches and compare
+   their final loss, duration and mean drying rate to tune your recipes.
+
+With several chambers, a selector in the header switches between them. The
+panel talks to the integration over websocket (`curing_chamber/*` commands,
+see `websocket.py`); every action remains available as a service for
+automations.
 
 ### Custom card
 
@@ -386,7 +430,12 @@ d'action manuelle en mode dégradé, diagnostics, traductions FR/EN complètes.
   lot de référence pilote la phase de perte de poids du programme.
 - **Capteurs dérivés** : point de rosée (Magnus), humidité absolue, perte de
   poids %, vitesse de séchage %/jour.
-- **Carte Lovelace personnalisée** fournie avec l'intégration.
+- **Panneau latéral** (sans YAML) : jauges et décisions de régulation en
+  direct, fiches de lots avec courbes de séchage, pesée et photo depuis le
+  téléphone, éditeur visuel de programmes multi-phases et historique comparant
+  les lots terminés. Multi-chambre.
+- **Carte Lovelace personnalisée** et **API websocket** fournies avec
+  l'intégration.
 
 ## Installation (HACS)
 
@@ -441,6 +490,7 @@ compresseur, limites absolues, délais mode dégradé…), **Notifications**.
 | `switch` | Mode maintenance | Tout OFF, pas d'alertes |
 | `button` | Phase suivante / Poids de référence / Acquitter | — |
 | `number` | Consigne manuelle T° / HR | Synchronisées avec climate/humidifier |
+| `number` | Poids manuel | Saisir une pesée depuis l'interface : enregistrée sur le lot de référence, ou utilisée comme poids de l'enceinte sans balance |
 
 ## Tableau de décision de la régulation
 
@@ -520,13 +570,58 @@ data:
   photo: "/config/www/photos/coppa_jour12.jpg"   # chemin, base64 ou URL data:
 ```
 
-Les photos sont stockées sous `<config>/www/curing_chamber/<batch_id>/` et
-servies via `/local/curing_chamber/<batch_id>/…`. Autres services de lot :
-`set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`.
+Les photos sont stockées **en privé** sous
+`<config>/.storage/curing_chamber/photos/<entry_id>/<batch_id>/` et servies
+uniquement aux utilisateurs connectés via `/api/curing_chamber/photo/…` (le
+panneau et la carte signent l'URL avant affichage). Les photos enregistrées par
+les versions précédentes dans le dossier public `www/` y sont déplacées
+automatiquement au démarrage. Autres services de lot : `set_reference_batch`,
+`complete_batch`, `archive_batch`, `delete_batch`.
 
-Nouveaux capteurs : **Lots actifs** (attribut `batches` détaillant perte / vitesse
-/ ETA / photo de chaque lot — source de données de la carte),
-**Perte de poids du lot de référence** (%) et **Fin estimée du lot de référence**.
+**Saisir un poids depuis l'interface.** Chaque enceinte expose une entité
+`number` **Poids manuel** (`number.<enceinte>_manual_weight`). Saisissez une
+valeur depuis la page de l'appareil, une carte d'entités ou l'application
+mobile : elle est enregistrée comme pesée sur le **lot de référence**. Sans
+aucun lot, la valeur devient le poids de l'enceinte : appuyez une fois sur
+*Poids de référence*, puis chaque nouvelle saisie alimente le capteur *Perte de
+poids* et les phases `weight_loss` — sans balance ni YAML. L'entité affiche le
+poids actuellement utilisé, avec sa `source` (`batch`, `scale` ou `manual`) dans
+les attributs.
+
+Nouveaux capteurs : **Lots actifs** (attribut `batches` léger : perte, vitesse,
+ETA et dernière photo de chaque lot non archivé, plus l'`entry_id` que la carte
+utilise pour charger l'historique des pesées en websocket — cet historique
+n'est pas enregistré dans la base du recorder), **Perte de poids du lot de
+référence** (%) et **Fin estimée du lot de référence**.
+
+### Panneau latéral
+
+Dès qu'une enceinte est configurée, une entrée **Curing Chamber** apparaît dans
+la barre latérale (fonctionne sur toutes les installations, y compris Home
+Assistant Container — ni add-on, ni ingress). Il est accessible à tous les
+utilisateurs, pas seulement aux administrateurs, et suit le thème actif. Quatre
+vues :
+
+1. **Chambre** — jauges T° / HR / point de rosée avec consignes, état et heures
+   de marche des actionneurs, programme en cours avec sa frise de phases
+   (démarrer / pause / phase suivante / stop), consignes manuelles,
+   interrupteurs régulation et maintenance, alertes actives avec l'action
+   manuelle recommandée, dernières décisions de régulation.
+2. **Lots** — lots actifs et terminés, courbe de séchage avec la cible et la
+   projection d'ETA, historique des pesées (supprimables), galerie photo
+   chronologique, formulaire de pesée avec prise de photo directe (les photos
+   sont réduites dans le navigateur), créer / référence / terminer / archiver /
+   supprimer.
+3. **Programmes** — éditeur visuel de programmes multi-phases : dupliquer un
+   preset, éditer les phases (consignes, condition de fin, durée, perte de
+   poids), validation en direct, enregistrer, supprimer, démarrer.
+4. **Historique** — superposer les courbes de séchage des lots terminés et
+   comparer perte finale, durée et vitesse moyenne pour ajuster vos recettes.
+
+Avec plusieurs enceintes, un sélecteur dans l'en-tête permet de basculer. Le
+panneau dialogue avec l'intégration en websocket (commandes `curing_chamber/*`,
+voir `websocket.py`) ; chaque action reste disponible en service pour les
+automatisations.
 
 ### Carte personnalisée
 
