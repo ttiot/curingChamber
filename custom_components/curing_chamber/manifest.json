@@ -1,8 +1,15 @@
 {
   "domain": "curing_chamber",
   "name": "Curing Chamber",
-  "after_dependencies": ["http"],
-  "codeowners": ["@ttiot"],
+  "after_dependencies": [
+    "http",
+    "websocket_api",
+    "frontend",
+    "panel_custom"
+  ],
+  "codeowners": [
+    "@ttiot"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/ttiot/curingchamber",
   "integration_type": "hub",

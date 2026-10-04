@@ -219,6 +219,9 @@
       },
       "manual_humidity": {
         "name": "Manual humidity target"
+      },
+      "manual_weight": {
+        "name": "Manual weight"
       }
     }
   }

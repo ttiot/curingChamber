@@ -130,9 +130,23 @@ SERVICE_ARCHIVE_BATCH: Final = "archive_batch"
 SERVICE_DELETE_BATCH: Final = "delete_batch"
 
 # --- Batch photos ------------------------------------------------------------
-# Weigh-in photos are written under <config>/www/<PHOTO_WWW_SUBDIR>/<batch_id>/
-# and served by Home Assistant under /local/<PHOTO_WWW_SUBDIR>/<batch_id>/.
+# Legacy (pre-panel) location: <config>/www/<PHOTO_WWW_SUBDIR>/<batch_id>/ served
+# unauthenticated at /local/... — migrated on load to the private location below.
 PHOTO_WWW_SUBDIR: Final = "curing_chamber"
+# Current location: <config>/.storage/curing_chamber/photos/<entry_id>/<batch_id>/<file>,
+# served only to authenticated users by the integration's own HTTP view at
+# PHOTO_URL_BASE/<entry_id>/<batch_id>/<file> (sign the URL for <img> tags).
+PHOTO_STORAGE_DIR: Final = (".storage", DOMAIN, "photos")
+PHOTO_URL_BASE: Final = f"/api/{DOMAIN}/photo"
+
+# --- Frontend (bundled card + sidebar panel) --------------------------------
+FRONTEND_URL_BASE: Final = f"/{DOMAIN}"
+CARD_FILENAME: Final = "curing-chamber-card.js"
+PANEL_FILENAME: Final = "curing-chamber-panel.js"
+PANEL_URL_PATH: Final = "curing-chamber"
+PANEL_WEBCOMPONENT: Final = "curing-chamber-panel"
+PANEL_TITLE: Final = "Curing Chamber"
+PANEL_ICON: Final = "mdi:sausage"
 
 # Platforms managed by this integration.
 PLATFORMS: Final = [

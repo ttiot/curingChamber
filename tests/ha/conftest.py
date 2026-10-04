@@ -24,6 +24,13 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
+@pytest.fixture(autouse=True)
+def isolated_config_dir(hass, tmp_path):
+    """Point the config dir at a temp folder so photo files never leak between tests."""
+    hass.config.config_dir = str(tmp_path)
+    yield
+
+
 @pytest.fixture
 def config_entry() -> MockConfigEntry:
     """A chamber configured with a temp/humidity sensor and a cooling switch."""

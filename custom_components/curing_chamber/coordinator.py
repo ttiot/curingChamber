@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
+import dataclasses
 import logging
 import os
+import re
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +28,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -44,6 +48,8 @@ from .const import (
     EVENT_TYPE_MANUAL_ACTION,
     EVENT_TYPE_PHASE_CHANGED,
     EVENT_TYPE_PROGRAM_COMPLETED,
+    PHOTO_STORAGE_DIR,
+    PHOTO_URL_BASE,
     PHOTO_WWW_SUBDIR,
 )
 from .program import PRESETS, ProgramEngine, ProgramEventType, ProgramStatus
@@ -66,6 +72,9 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+# Photo file names we generate/accept (defence against path traversal).
+_SAFE_NAME = re.compile(r"[A-Za-z0-9_.-]+")
 
 _ACTUATOR_CONF = {
     Actuator.COOL: conf.CONF_COOL_SWITCH,
@@ -140,7 +149,52 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.batches = {
             batch_id: Batch.from_dict(raw) for batch_id, raw in self.store.batches.items()
         }
+        await self._async_migrate_photos()
         self._track_sources()
+
+    async def _async_migrate_photos(self) -> None:
+        """Move legacy ``/local/`` photos to the private store and rewrite URLs.
+
+        Pre-panel releases wrote weigh-in photos under ``<config>/www`` where
+        anyone knowing the URL could fetch them without logging in.
+        """
+        legacy_prefix = f"/local/{PHOTO_WWW_SUBDIR}/"
+        moves: list[tuple[str, str]] = []
+        changed = False
+        for batch in self.batches.values():
+            for index, sample in enumerate(batch.samples):
+                url = sample.photo_url
+                if not url or not url.startswith(legacy_prefix):
+                    continue
+                filename = url.rsplit("/", 1)[-1]
+                if not _SAFE_NAME.fullmatch(filename):
+                    continue
+                old_path = self.hass.config.path("www", PHOTO_WWW_SUBDIR, batch.id, filename)
+                moves.append((old_path, self.photo_path(batch.id, filename)))
+                batch.samples[index] = dataclasses.replace(
+                    sample, photo_url=self._photo_url(batch.id, filename)
+                )
+                changed = True
+        if not changed:
+            return
+
+        def _move_all() -> None:
+            for old_path, new_path in moves:
+                if not os.path.isfile(old_path):
+                    continue
+                os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                os.replace(old_path, new_path)
+                # Drop the now-empty public folders (batch dir, then the root).
+                for directory in (
+                    os.path.dirname(old_path),
+                    os.path.dirname(os.path.dirname(old_path)),
+                ):
+                    with contextlib.suppress(OSError):
+                        os.rmdir(directory)
+
+        await self.hass.async_add_executor_job(_move_all)
+        self._persist_batches()
+        _LOGGER.info("Moved %d weigh-in photo(s) out of the public www folder", len(moves))
 
     def _configure_filters(self) -> None:
         samples = int(conf.get(self.entry, conf.CONF_FILTER_SAMPLES, conf.DEFAULT_FILTER_SAMPLES))
@@ -308,18 +362,31 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     def _reference_weight_now(self) -> float | None:
-        """Weight driving loss/rate: the reference batch's latest weigh-in.
+        """Weight driving loss/rate (see :meth:`_weight_with_source`)."""
+        weight, _ = self._weight_with_source()
+        return weight
 
-        Falls back to the chamber scale (``CONF_WEIGHT_SENSOR``) so a chamber
-        with no batch behaves exactly as before this feature existed.
+    def _weight_with_source(self) -> tuple[float | None, str | None]:
+        """Current chamber weight and where it comes from.
+
+        Priority: the reference batch's latest weigh-in (``"batch"``), then the
+        chamber scale ``CONF_WEIGHT_SENSOR`` (``"scale"``) so a chamber with no
+        batch behaves exactly as before batches existed, then the last weight
+        typed into the *Manual weight* number entity (``"manual"``) for setups
+        with neither a batch nor a scale.
         """
         ref_id = self.store.reference_batch_id
         if ref_id:
             batch = self.batches.get(ref_id)
             if batch is not None and batch.latest_weight is not None:
-                return batch.latest_weight
+                return batch.latest_weight, "batch"
         weight, _ = self._num_state(conf.CONF_WEIGHT_SENSOR)
-        return weight
+        if weight is not None:
+            return weight, "scale"
+        manual = self.store.manual_weight
+        if manual is not None:
+            return manual["weight"], "manual"
+        return None, None
 
     def _update_drying_rate(self, weight: float | None, now: float) -> None:
         ref = self.program.state.reference_weight
@@ -627,7 +694,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_set_reference_weight(self, weight: float | None) -> None:
         if weight is None:
-            weight, _ = self._num_state(conf.CONF_WEIGHT_SENSOR)
+            weight = self._reference_weight_now()
         if weight is not None:
             self.program.set_reference_weight(weight)
             self._last_weight = None
@@ -717,6 +784,22 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist_batches()
         await self.async_refresh()
 
+    async def async_record_manual_weight(self, weight: float) -> None:
+        """Hand-entered weight from the *Manual weight* number entity.
+
+        With a reference batch this is simply a new weigh-in on that batch.
+        Without one, the value is remembered as the chamber weight so the
+        weight-loss sensor and ``weight_loss`` program phases work with no scale.
+        """
+        ref_id = self.store.reference_batch_id
+        if ref_id and ref_id in self.batches:
+            await self.async_record_weight(ref_id, weight)
+            return
+        self.store.set_manual_weight(weight, dt_util.utcnow().timestamp())
+        self.store.async_save()
+        self._last_weight = None
+        await self.async_refresh()
+
     async def async_set_reference_batch(self, batch_id: str) -> None:
         if batch_id not in self.batches:
             raise ValueError(f"Unknown batch '{batch_id}'")
@@ -733,6 +816,10 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist_batches()
         await self.async_refresh()
 
+    async def async_set_batch_status(self, batch_id: str, status: BatchStatus) -> None:
+        """Set a batch's lifecycle status (also lets the panel re-activate one)."""
+        await self._async_set_batch_status(batch_id, status)
+
     async def async_complete_batch(self, batch_id: str) -> None:
         await self._async_set_batch_status(batch_id, BatchStatus.COMPLETED)
 
@@ -748,47 +835,183 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.async_refresh()
         return removed
 
+    # -- Photos ------------------------------------------------------------
+
+    def photo_path(self, batch_id: str, filename: str) -> str:
+        """Filesystem path of a stored weigh-in photo (private, outside www/)."""
+        return self.hass.config.path(*PHOTO_STORAGE_DIR, self.entry.entry_id, batch_id, filename)
+
+    def _photo_url(self, batch_id: str, filename: str) -> str:
+        return f"{PHOTO_URL_BASE}/{self.entry.entry_id}/{batch_id}/{filename}"
+
     async def _save_photo(self, batch_id: str, ts: float, photo: str) -> str | None:
-        """Write a weigh-in photo under <config>/www and return its /local URL."""
-        directory = self.hass.config.path("www", PHOTO_WWW_SUBDIR, batch_id)
+        """Store a weigh-in photo privately and return its authenticated URL."""
         filename = f"{int(ts)}.jpg"
+        path = self.photo_path(batch_id, filename)
 
         def _write() -> str | None:
             data = _photo_bytes(photo)
             if data is None:
                 return None
-            os.makedirs(directory, exist_ok=True)
-            with open(os.path.join(directory, filename), "wb") as handle:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as handle:
                 handle.write(data)
-            return f"/local/{PHOTO_WWW_SUBDIR}/{batch_id}/{filename}"
+            return self._photo_url(batch_id, filename)
 
         return await self.hass.async_add_executor_job(_write)
 
-    def _batch_summaries(self, now: float) -> list[dict[str, Any]]:
-        """Serialisable per-batch summary consumed by the sensors and card."""
-        summaries: list[dict[str, Any]] = []
-        for batch in self.batches.values():
-            summaries.append(
-                {
-                    "id": batch.id,
-                    "name": batch.name,
-                    "product": batch.product,
-                    "program_id": batch.program_id,
-                    "status": batch.status.value,
-                    "reference_weight": batch.effective_reference,
-                    "target_loss_pct": batch.target_loss_pct,
-                    "last_weight": batch.latest_weight,
-                    "loss_pct": batch_engine.current_loss_pct(batch),
-                    "drying_rate": batch_engine.drying_rate_pct_per_day(batch),
-                    "eta": batch_engine.estimate_eta(batch, now),
-                    "created_at": batch.created_at,
-                    "samples": [s.to_dict() for s in batch.samples],
-                    "last_photo_url": next(
-                        (s.photo_url for s in reversed(batch.samples) if s.photo_url), None
-                    ),
-                }
-            )
-        return summaries
+    async def _delete_photo(self, batch_id: str, url: str | None) -> None:
+        if not url or not url.startswith(f"{PHOTO_URL_BASE}/{self.entry.entry_id}/{batch_id}/"):
+            return
+        filename = url.rsplit("/", 1)[-1]
+        if not _SAFE_NAME.fullmatch(filename):
+            return
+        path = self.photo_path(batch_id, filename)
+
+        def _remove() -> None:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(path)
+
+        await self.hass.async_add_executor_job(_remove)
+
+    async def async_delete_weigh_in(self, batch_id: str, timestamp: float) -> None:
+        """Remove one weigh-in (and its photo) from a batch."""
+        batch = self.batches.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        sample = next((s for s in batch.samples if abs(s.timestamp - timestamp) < 1e-3), None)
+        if sample is None:
+            raise ValueError("Unknown weigh-in")
+        batch.samples.remove(sample)
+        await self._delete_photo(batch_id, sample.photo_url)
+        self._last_weight = None
+        self._persist_batches()
+        await self.async_refresh()
+
+    # -- Batch summaries (sensor attributes, websocket API, card, panel) ----
+
+    def _batch_summary(
+        self, batch: Batch, now: float, *, with_samples: bool = False
+    ) -> dict[str, Any]:
+        """Serialisable summary of one batch.
+
+        Light by default (no weigh-in history) so it can sit in a sensor
+        attribute; ``with_samples`` adds the full history for the panel/card.
+        """
+        latest = batch.latest_sample
+        summary: dict[str, Any] = {
+            "id": batch.id,
+            "name": batch.name,
+            "product": batch.product,
+            "program_id": batch.program_id,
+            "status": batch.status.value,
+            "reference_weight": batch.effective_reference,
+            "target_loss_pct": batch.target_loss_pct,
+            "last_weight": batch.latest_weight,
+            "loss_pct": batch_engine.current_loss_pct(batch),
+            "drying_rate": batch_engine.drying_rate_pct_per_day(batch),
+            "eta": batch_engine.estimate_eta(batch, now),
+            "created_at": batch.created_at,
+            "sample_count": len(batch.samples),
+            "last_weigh_in": latest.timestamp if latest else None,
+            "last_photo_url": next(
+                (s.photo_url for s in reversed(batch.samples) if s.photo_url), None
+            ),
+        }
+        if with_samples:
+            summary["samples"] = [s.to_dict() for s in batch.samples]
+        return summary
+
+    def _batch_summaries(
+        self, now: float, *, include_archived: bool = False, with_samples: bool = False
+    ) -> list[dict[str, Any]]:
+        return [
+            self._batch_summary(batch, now, with_samples=with_samples)
+            for batch in self.batches.values()
+            if include_archived or batch.status is not BatchStatus.ARCHIVED
+        ]
+
+    def batch_summaries(
+        self, *, include_archived: bool = False, with_samples: bool = False
+    ) -> list[dict[str, Any]]:
+        """Public batch listing for the websocket API."""
+        now = dt_util.utcnow().timestamp()
+        return self._batch_summaries(
+            now, include_archived=include_archived, with_samples=with_samples
+        )
+
+    def batch_summary(self, batch_id: str) -> dict[str, Any]:
+        """Full summary (with weigh-ins) of one batch; raises on unknown id."""
+        batch = self.batches.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        return self._batch_summary(batch, dt_util.utcnow().timestamp(), with_samples=True)
+
+    @property
+    def has_scale(self) -> bool:
+        return bool(conf.get(self.entry, conf.CONF_WEIGHT_SENSOR))
+
+    def chamber_state(self) -> dict[str, Any]:
+        """Live chamber snapshot for the panel (websocket ``state``/``subscribe``)."""
+        data = self.data or {}
+        registry = er.async_get(self.hass)
+        prefix = self.entry.entry_id
+
+        def entity_id(domain: str, key: str) -> str | None:
+            return registry.async_get_entity_id(domain, DOMAIN, f"{prefix}_{key}")
+
+        inputs = data.get("inputs")
+        actuator_states = getattr(inputs, "actuator_states", None) or {}
+        program = self.program.program
+        state = self.program.state
+        return {
+            "entry_id": prefix,
+            "name": self.chamber_name,
+            "updated_at": dt_util.utcnow().timestamp(),
+            "temp": data.get("temp"),
+            "humidity": data.get("humidity"),
+            "dew_point": data.get("dew_point"),
+            "absolute_humidity": data.get("absolute_humidity"),
+            "target_temp": data.get("target_temp"),
+            "target_humidity": data.get("target_humidity"),
+            "temp_divergence": data.get("temp_divergence"),
+            "humidity_divergence": data.get("humidity_divergence"),
+            "summary": data.get("summary"),
+            "decisions": data.get("decisions") or [],
+            "actuators": {a.value: state_ for a, state_ in actuator_states.items()},
+            "active_alerts": data.get("active_alerts") or [],
+            "alert_details": data.get("alert_details") or {},
+            "regulation_enabled": self._regulation_enabled,
+            "maintenance": self._maintenance,
+            "program": {
+                "status": self.program.status.value,
+                "program_id": state.program_id,
+                "program_name": program.name if program else None,
+                "phase_index": state.phase_index,
+                "phase_name": data.get("phase_name"),
+                "phase_remaining": data.get("phase_remaining"),
+                "started_at": state.started_at,
+                "phase_started_at": state.phase_started_at,
+                "phases": [p.to_dict() for p in program.phases] if program else [],
+            },
+            "weight": data.get("weight"),
+            "weight_source": data.get("weight_source"),
+            "reference_weight": data.get("reference_weight"),
+            "weight_loss_pct": data.get("weight_loss_pct"),
+            "drying_rate": data.get("drying_rate"),
+            "counters": data.get("counters") or {},
+            "reference_batch_id": data.get("reference_batch_id"),
+            "active_batch_count": data.get("active_batch_count", 0),
+            "batches": data.get("batches") or [],
+            "entities": {
+                "regulation_switch": entity_id("switch", "switch_regulation"),
+                "maintenance_switch": entity_id("switch", "switch_maintenance"),
+                "climate": entity_id("climate", "climate"),
+                "humidifier": entity_id("humidifier", "humidifier"),
+                "program_select": entity_id("select", "select_program"),
+                "manual_weight": entity_id("number", "number_manual_weight"),
+            },
+        }
 
     @property
     def regulation_enabled(self) -> bool:
@@ -806,16 +1029,19 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         temp_div = divergence(list(inputs.temp_probes))
         hum_div = divergence(list(inputs.humidity_probes))
         weight_loss = self.program.weight_loss_pct(inputs.weight)
+        _, weight_source = self._weight_with_source()
         now = dt_util.utcnow().timestamp()
         batches = self._batch_summaries(now)
         ref_id = self.store.reference_batch_id
-        ref_summary = next((b for b in batches if b["id"] == ref_id), None)
+        ref_batch = self.batches.get(ref_id) if ref_id else None
+        ref_summary = self._batch_summary(ref_batch, now) if ref_batch else None
         active_batches = sum(1 for b in batches if b["status"] == BatchStatus.ACTIVE.value)
         dew_point = abs_humidity = None
         if inputs.temp is not None and inputs.humidity is not None:
             dew_point = derived.dew_point(inputs.temp, inputs.humidity)
             abs_humidity = derived.absolute_humidity(inputs.temp, inputs.humidity)
         return {
+            "entry_id": self.entry.entry_id,
             "inputs": inputs,
             "config": reg_config,
             "outputs": outputs,
@@ -829,6 +1055,9 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "absolute_humidity": abs_humidity,
             "temp_divergence": temp_div,
             "humidity_divergence": hum_div,
+            "weight": inputs.weight,
+            "weight_source": weight_source,
+            "reference_weight": self.program.state.reference_weight,
             "weight_loss_pct": weight_loss,
             "drying_rate": inputs.drying_rate,
             "batches": batches,

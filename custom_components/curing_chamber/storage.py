@@ -2,7 +2,8 @@
 
 Persists user-defined programs, the running-program state (so a curing cycle
 resumes transparently after a restart), per-actuator run-hour counters and the
-product batches (with their weigh-in history and the designated reference batch).
+product batches (with their weigh-in history and the designated reference batch)
+and the last manually entered chamber weight (for setups without a scale).
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ class CuringChamberStore:
         self._data.setdefault("counters", {})
         self._data.setdefault("batches", {})
         self._data.setdefault("reference_batch_id", None)
+        self._data.setdefault("manual_weight", None)
         return self._data
 
     @property
@@ -61,6 +63,14 @@ class CuringChamberStore:
     @property
     def reference_batch_id(self) -> str | None:
         return self._data.get("reference_batch_id")
+
+    @property
+    def manual_weight(self) -> dict[str, float] | None:
+        """Last hand-entered chamber weight: ``{"weight": ..., "timestamp": ...}``."""
+        return self._data.get("manual_weight")
+
+    def set_manual_weight(self, weight: float, timestamp: float) -> None:
+        self._data["manual_weight"] = {"weight": weight, "timestamp": timestamp}
 
     def set_program_state(self, state: dict[str, Any] | None) -> None:
         self._data["program_state"] = state

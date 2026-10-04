@@ -219,6 +219,9 @@
       },
       "manual_humidity": {
         "name": "Consigne manuelle d'hygrométrie"
+      },
+      "manual_weight": {
+        "name": "Poids manuel"
       }
     }
   }
