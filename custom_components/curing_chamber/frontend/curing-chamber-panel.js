@@ -131,6 +131,9 @@ const STR = {
     core_temp: "Core",
     core_delta: "core − air",
     ambient_history: "Temperature & humidity history",
+    ambient_during_batch: "Chamber conditions during the batch",
+    mean_temp: "Mean T°",
+    mean_hum: "Mean RH",
     range_24h: "24 h",
     range_7d: "7 d",
     range_30d: "30 d",
@@ -333,6 +336,9 @@ const STR = {
     core_temp: "À cœur",
     core_delta: "cœur − air",
     ambient_history: "Historique température & hygrométrie",
+    ambient_during_batch: "Conditions de la chambre pendant le lot",
+    mean_temp: "T° moy.",
+    mean_hum: "HR moy.",
     range_24h: "24 h",
     range_7d: "7 j",
     range_30d: "30 j",
@@ -1530,6 +1536,26 @@ class CuringChamberPanel extends HTMLElement {
     return box;
   }
 
+  /** [start, end] timestamps covering a batch: creation → completion (or now). */
+  _batchPeriod(b) {
+    const start = b.created_at || (b.samples && b.samples[0] && b.samples[0].timestamp) || Date.now() / 1000 - 86400;
+    const end = b.status === "active" ? Date.now() / 1000 : (b.completed_at || b.last_weigh_in || Date.now() / 1000);
+    return [start, Math.max(end, start + 3600)];
+  }
+
+  /** Mean chamber temperature / humidity over a batch (cached per batch id). */
+  async _ambientStats(b) {
+    this._ambientStatsCache = this._ambientStatsCache || {};
+    const key = `${b.id}|${b.status}|${b.completed_at || ""}`;
+    if (this._ambientStatsCache[key]) return this._ambientStatsCache[key];
+    const [start, end] = this._batchPeriod(b);
+    const sources = (this._state && this._state.sources) || {};
+    const data = await this._fetchHistory(start, end, { temp: sources.temp, humidity: sources.humidity });
+    const stats = { temp: this._historyMean(data.temp, start, end), humidity: this._historyMean(data.humidity, start, end) };
+    this._ambientStatsCache[key] = stats;
+    return stats;
+  }
+
   _ambientHistoryCard(st) {
     const t = (k) => this._t(k);
     const ranges = { "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400 };
@@ -1812,6 +1838,8 @@ class CuringChamberPanel extends HTMLElement {
       h("h2", null, t("drying_curve")),
       lossPoints(b).length >= 2 ? this._curveChart([{ batch: b, color: null }], { target: b.target_loss_pct, eta: b.eta })
         : h("div", { class: "muted small" }, t("curve_needs_two")),
+      h("h2", { style: "margin-top:12px" }, t("ambient_during_batch")),
+      this._ambientChartBox(...this._batchPeriod(b)),
     ]);
     grid.appendChild(summary);
 
@@ -2440,6 +2468,14 @@ class CuringChamberPanel extends HTMLElement {
   // View 4 — History
   // ===========================================================================
 
+  /** Table cell showing a mean chamber value over the batch, loaded lazily. */
+  _ambientCell(b, key, suffix) {
+    const cell = h("td", { class: "muted" }, "…");
+    this._ambientStats(b).then((stats) => { cell.className = ""; cell.textContent = fmtNum(stats[key], 1, suffix); })
+      .catch(() => { cell.textContent = "—"; });
+    return cell;
+  }
+
   _viewHistory() {
     const t = (k) => this._t(k);
     const finished = this._batches.filter((b) => b.status === "completed" || b.status === "archived");
@@ -2486,13 +2522,16 @@ class CuringChamberPanel extends HTMLElement {
         h("td", null, [fmtNum(finalLoss, 1, " %"), b.target_loss_pct != null ? h("span", { class: "muted" }, ` / ${fmtNum(b.target_loss_pct, 0, " %")}`) : null]),
         h("td", null, days != null ? `${days.toFixed(0)} ${t("day_short")}` : "—"),
         h("td", null, fmtNum(meanRate, 2, " %/d")),
+        this._ambientCell(b, "temp", " °C"),
+        this._ambientCell(b, "humidity", " %"),
         h("td", null, fmtDate(b.created_at, this._locale)),
       ]);
     });
     wrap.appendChild(h("div", { class: "card", style: "margin-top:16px" }, [
       h("div", { class: "table-wrap" }, h("table", null, [
         h("thead", null, h("tr", null, [h("th"), h("th", null, t("name")), h("th"), h("th", null, t("program")), h("th", null, t("reference_weight")),
-          h("th", null, t("final_loss")), h("th", null, t("duration")), h("th", null, t("mean_rate")), h("th", null, t("date"))])),
+          h("th", null, t("final_loss")), h("th", null, t("duration")), h("th", null, t("mean_rate")),
+          h("th", null, t("mean_temp")), h("th", null, t("mean_hum")), h("th", null, t("date"))])),
         h("tbody", null, rows),
       ])),
     ]));

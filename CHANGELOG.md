@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Richer batch comparison.** A batch's detail shows the chamber
+  temperature / humidity recorded over its life under the drying curve, and
+  the History table gains *Mean T°* and *Mean RH* columns computed from the
+  recorder history of each finished batch (next to the program used).
 - **Ambient history in the panel.** The Chamber view gets a *Temperature &
   humidity history* card (24 h / 7 d / 30 d) drawn from the recorder history
   of the source sensors (and the core probe), with the current targets as
