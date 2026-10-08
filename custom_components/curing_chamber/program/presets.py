@@ -11,7 +11,7 @@ presets of its own kind (charcuterie or cheese cave).
 
 from __future__ import annotations
 
-from .types import EndKind, OnComplete, Phase, Program, ProgramCategory
+from .types import EndKind, OnComplete, Phase, Program, ProgramCategory, Reminder
 
 _WEEK_H = 7 * 24.0
 
@@ -88,6 +88,7 @@ def _cheese(
     ripen_weeks: float,
     *,
     ramp_hours: float | None = None,
+    reminders: tuple[Reminder, ...] = (),
 ) -> Program:
     """A cheese ripening: optional surface drying (ressuyage), then ripening.
 
@@ -126,7 +127,15 @@ def _cheese(
         on_complete=OnComplete.HOLD_LAST,
         builtin=True,
         category=ProgramCategory.CHEESE,
+        reminders=reminders,
     )
+
+
+_TURN_DAILY = Reminder(kind="turned", every_hours=24.0, phases=("ripening",))
+_TURN_EVERY_2_DAYS = Reminder(kind="turned", every_hours=48.0, phases=("ripening",))
+_WASH_EVERY_2_DAYS = Reminder(
+    kind="washed", every_hours=48.0, note="brine / morge", phases=("ripening",)
+)
 
 
 PRESETS: tuple[Program, ...] = (
@@ -142,9 +151,27 @@ PRESETS: tuple[Program, ...] = (
     _cure("jambon_cru", "Jambon cru (après salage)", None, None, None, 14.0, 72.0, 32.0, 26.0),
     _hold("cellar_hold", "Maintien cave d'affinage", 12.0, 78.0, ProgramCategory.CHARCUTERIE),
     # --- Cheese ---------------------------------------------------------------
-    _cheese("cheese_bloomy", "Croûte fleurie (camembert, brie)", 16.0, 85.0, 24.0, 12.0, 92.0, 3.0),
     _cheese(
-        "cheese_washed", "Croûte lavée (munster, reblochon)", 16.0, 85.0, 24.0, 13.0, 95.0, 5.0
+        "cheese_bloomy",
+        "Croûte fleurie (camembert, brie)",
+        16.0,
+        85.0,
+        24.0,
+        12.0,
+        92.0,
+        3.0,
+        reminders=(_TURN_DAILY,),
+    ),
+    _cheese(
+        "cheese_washed",
+        "Croûte lavée (munster, reblochon)",
+        16.0,
+        85.0,
+        24.0,
+        13.0,
+        95.0,
+        5.0,
+        reminders=(_TURN_EVERY_2_DAYS, _WASH_EVERY_2_DAYS),
     ),
     _cheese(
         "cheese_pressed",
@@ -156,6 +183,7 @@ PRESETS: tuple[Program, ...] = (
         88.0,
         10.0,
         ramp_hours=48.0,
+        reminders=(_TURN_EVERY_2_DAYS,),
     ),
     _cheese("cheese_blue", "Pâte persillée (bleu, fourme)", None, None, None, 9.0, 95.0, 8.0),
     _cheese("cheese_lactic", "Pâte lactique / chèvre", 18.0, 75.0, 48.0, 11.0, 85.0, 2.0),

@@ -142,8 +142,52 @@ class Phase:
 
 
 @dataclass(frozen=True)
+class Reminder:
+    """A periodic care reminder attached to a program.
+
+    Every ``every_hours`` (wall clock, while the program runs) a notification
+    suggests the journal entry ``kind`` (turned, washed, …) with ``note``.
+    ``phases`` restricts it to the named phases (empty = whole program); the
+    countdown restarts when such a phase begins.
+    """
+
+    kind: str
+    every_hours: float
+    note: str | None = None
+    phases: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "every_hours": self.every_hours,
+            "note": self.note,
+            "phases": list(self.phases),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> Reminder:
+        raw_phases = data.get("phases") or []
+        phases = tuple(str(p) for p in raw_phases) if isinstance(raw_phases, list) else ()
+        return cls(
+            kind=str(data.get("kind") or "note"),
+            every_hours=float(_opt_float(data.get("every_hours")) or 24.0),
+            note=_opt_str(data.get("note")),
+            phases=phases,
+        )
+
+
+@dataclass(frozen=True)
+class ReminderDue:
+    """A reminder that just became due (returned by the engine)."""
+
+    index: int
+    reminder: Reminder
+    phase_name: str
+
+
+@dataclass(frozen=True)
 class Program:
-    """An ordered sequence of phases."""
+    """An ordered sequence of phases, with optional care reminders."""
 
     id: str
     name: str
@@ -151,6 +195,7 @@ class Program:
     on_complete: OnComplete = OnComplete.HOLD_LAST
     builtin: bool = False
     category: ProgramCategory = ProgramCategory.CHARCUTERIE
+    reminders: tuple[Reminder, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -160,6 +205,7 @@ class Program:
             "on_complete": self.on_complete.value,
             "builtin": self.builtin,
             "category": self.category.value,
+            "reminders": [r.to_dict() for r in self.reminders],
         }
 
     @classmethod
@@ -167,6 +213,9 @@ class Program:
         raw_phases = data.get("phases", [])
         phases_iter = raw_phases if isinstance(raw_phases, list) else []
         phases = tuple(Phase.from_dict(_as_mapping(p)) for p in phases_iter)
+        raw_reminders = data.get("reminders", [])
+        reminders_iter = raw_reminders if isinstance(raw_reminders, list) else []
+        reminders = tuple(Reminder.from_dict(_as_mapping(r)) for r in reminders_iter)
         return cls(
             id=str(data["id"]),
             name=str(data["name"]),
@@ -174,6 +223,7 @@ class Program:
             on_complete=OnComplete(str(data.get("on_complete", "hold_last"))),
             builtin=bool(data.get("builtin", False)),
             category=ProgramCategory(str(data.get("category") or "charcuterie")),
+            reminders=reminders,
         )
 
 
@@ -192,6 +242,9 @@ class ProgramState:
     #: Product core temperature seen when the current phase started (for the
     #: direction of a ``CORE_TEMP`` end condition).
     core_temp_start: float | None = None
+    #: Last time each reminder fired, keyed by reminder index (as a string
+    #: for JSON).
+    reminder_last: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -204,6 +257,7 @@ class ProgramState:
             "paused_at": self.paused_at,
             "reference_weight": self.reference_weight,
             "core_temp_start": self.core_temp_start,
+            "reminder_last": dict(self.reminder_last),
         }
 
     @classmethod
@@ -218,6 +272,7 @@ class ProgramState:
             paused_at=_opt_float(data.get("paused_at")),
             reference_weight=_opt_float(data.get("reference_weight")),
             core_temp_start=_opt_float(data.get("core_temp_start")),
+            reminder_last=_float_map(data.get("reminder_last")),
         )
 
 
@@ -236,6 +291,17 @@ def _opt_float(value: object) -> float | None:
     if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
+
+
+def _float_map(value: object) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, raw in value.items():
+        number = _opt_float(raw)
+        if number is not None:
+            out[str(key)] = number
+    return out
 
 
 def _interpolate(start: float | None, end: float | None, fraction: float) -> float | None:

@@ -11,6 +11,8 @@ from .types import (
     ProgramEventType,
     ProgramState,
     ProgramStatus,
+    Reminder,
+    ReminderDue,
 )
 
 
@@ -144,6 +146,56 @@ class ProgramEngine:
         ):
             return []
         return self._advance(now, notify_current=True)
+
+    # -- Care reminders ------------------------------------------------------
+
+    def _reminder_baseline(self, index: int, reminder: Reminder) -> float | None:
+        """Instant the reminder counts from: last firing, else phase/program start."""
+        last = self.state.reminder_last.get(str(index))
+        start = self.state.phase_started_at if reminder.phases else self.state.started_at
+        if last is None:
+            return start
+        if start is None:
+            return last
+        return max(last, start)
+
+    def _applicable_reminders(self) -> list[tuple[int, Reminder, str]]:
+        phase = self.current_phase
+        if self.program is None or phase is None:
+            return []
+        return [
+            (i, r, phase.name)
+            for i, r in enumerate(self.program.reminders)
+            if r.every_hours > 0 and (not r.phases or phase.name in r.phases)
+        ]
+
+    def due_reminders(self, now: float) -> list[ReminderDue]:
+        """Return the reminders that become due now and mark them fired."""
+        if self.state.status is not ProgramStatus.RUNNING:
+            return []
+        due: list[ReminderDue] = []
+        for index, reminder, phase_name in self._applicable_reminders():
+            baseline = self._reminder_baseline(index, reminder)
+            if baseline is None:
+                continue
+            if now - baseline >= reminder.every_hours * 3600.0:
+                self.state.reminder_last[str(index)] = now
+                due.append(ReminderDue(index, reminder, phase_name))
+        return due
+
+    def next_reminder(self, now: float) -> tuple[Reminder, float] | None:
+        """Return the soonest reminder and the seconds until it is due."""
+        if self.state.status not in (ProgramStatus.RUNNING, ProgramStatus.PAUSED):
+            return None
+        best: tuple[Reminder, float] | None = None
+        for index, reminder, _ in self._applicable_reminders():
+            baseline = self._reminder_baseline(index, reminder)
+            if baseline is None:
+                continue
+            remaining = max(0.0, baseline + reminder.every_hours * 3600.0 - now)
+            if best is None or remaining < best[1]:
+                best = (reminder, remaining)
+        return best
 
     def complete(self, now: float) -> list[ProgramEvent]:
         """End the program now (e.g. its batch was completed by hand).

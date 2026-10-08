@@ -76,6 +76,7 @@ SENSORS: tuple[CuringSensorDescription, ...] = (
         attrs_fn=lambda d: {
             "program_status": d.get("program_status"),
             "phase_index": d.get("phase_index"),
+            "next_reminder": d.get("next_reminder"),
         },
     ),
     CuringSensorDescription(

@@ -143,7 +143,27 @@ _PROGRAM: dict[str, dict[str, str]] = {
         "en": "Program complete: {program}.",
         "fr": "Programme terminé : {program}.",
     },
+    "reminder": {
+        "en": "Reminder ({program}, phase {phase}): {action}.",
+        "fr": "Rappel ({program}, phase {phase}) : {action}.",
+    },
 }
+
+#: Journal kinds as spoken in a reminder notification.
+_KIND_LABELS: dict[str, dict[str, str]] = {
+    "turned": {"en": "turn the products", "fr": "retourner les produits"},
+    "washed": {"en": "wash / brush the rinds", "fr": "laver / brosser les croûtes"},
+    "salting": {"en": "salting", "fr": "salage"},
+    "hung": {"en": "hang / put in the chamber", "fr": "mise en séchoir"},
+    "tasting": {"en": "tasting", "fr": "dégustation"},
+    "note": {"en": "note", "fr": "note"},
+}
+
+
+def reminder_action(kind: str, note: str | None, language: str | None) -> str:
+    """Human wording of a reminder: localized kind label plus the note."""
+    label = _KIND_LABELS.get(kind, {}).get(_lang(language), kind)
+    return f"{label} — {note}" if note else label
 
 
 _BATCH: dict[str, dict[str, str]] = {

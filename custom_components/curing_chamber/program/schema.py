@@ -7,7 +7,7 @@ human-readable message on the first problem found.
 
 from __future__ import annotations
 
-from .types import EndKind, OnComplete, Phase, Program, ProgramCategory
+from .types import EndKind, OnComplete, Phase, Program, ProgramCategory, Reminder
 
 
 class ProgramValidationError(ValueError):
@@ -180,6 +180,8 @@ def validate_program(
         phases.append(phase)
         warnings.extend(phase_warnings)
 
+    reminders = _validate_reminders(payload.get("reminders"), [p.name for p in phases])
+
     program = Program(
         id=program_id,
         name=name,
@@ -187,8 +189,30 @@ def validate_program(
         on_complete=OnComplete(str(on_complete_raw)),
         builtin=False,
         category=ProgramCategory(str(category_raw)),
+        reminders=tuple(reminders),
     )
     return program, warnings
+
+
+def _validate_reminders(raw: object, phase_names: list[str]) -> list[Reminder]:
+    if raw is None:
+        return []
+    items = _as_list(raw, "'reminders' must be a list")
+    reminders: list[Reminder] = []
+    for index, item in enumerate(items):
+        data = _as_dict(item, f"reminder #{index + 1} must be an object")
+        kind = _text(data.get("kind"), f"reminder #{index + 1} needs a kind")
+        _require(len(kind) <= 40, f"reminder #{index + 1}: kind is too long")
+        every = _number(data.get("every_hours"), "every_hours", lo=0.25, hi=100000)
+        note_raw = data.get("note")
+        note = None if note_raw in (None, "") else str(note_raw)
+        phases_raw = data.get("phases") or []
+        phases = _as_list(phases_raw, f"reminder #{index + 1}: 'phases' must be a list")
+        names = tuple(str(p) for p in phases)
+        for name in names:
+            _require(name in phase_names, f"reminder #{index + 1} targets unknown phase '{name}'")
+        reminders.append(Reminder(kind=kind, every_hours=every, note=note, phases=names))
+    return reminders
 
 
 #: Envelope written by the export service / panel export button.

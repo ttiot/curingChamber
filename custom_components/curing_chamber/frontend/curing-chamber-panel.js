@@ -128,6 +128,12 @@ const STR = {
     no_entries: "No journal entry yet.",
     core_temp: "Core",
     core_delta: "core − air",
+    reminders: "Care reminders",
+    add_reminder: "Add reminder",
+    every_hours: "every (h)",
+    all_phases: "all phases",
+    next_reminder: "Next reminder",
+    reminder_hint: "While the program runs, a notification suggests this journal entry at the given interval (restarted when a targeted phase begins).",
     confirm_delete_batch: "Delete this batch and all its weigh-ins? This cannot be undone.",
     gallery: "Photos",
     record_weigh_in: "Record a weigh-in",
@@ -316,6 +322,12 @@ const STR = {
     no_entries: "Aucune entrée pour l'instant.",
     core_temp: "À cœur",
     core_delta: "cœur − air",
+    reminders: "Rappels d'entretien",
+    add_reminder: "Ajouter un rappel",
+    every_hours: "toutes les (h)",
+    all_phases: "toutes les phases",
+    next_reminder: "Prochain rappel",
+    reminder_hint: "Pendant le programme, une notification propose cette entrée de journal à l'intervalle indiqué (relancé au début d'une phase ciblée).",
     confirm_delete_batch: "Supprimer ce lot et toutes ses pesées ? Cette action est irréversible.",
     gallery: "Photos",
     record_weigh_in: "Enregistrer une pesée",
@@ -1429,6 +1441,12 @@ class CuringChamberPanel extends HTMLElement {
           `${t("phase")} ${(prog.phase_index || 0) + 1}/${(prog.phases || []).length}: ${prog.phase_name || "—"}`,
           prog.phase_remaining != null ? ` · ${fmtDuration(prog.phase_remaining, t)} ${t("remaining")}` : "",
         ]),
+        prog.next_reminder ? h("div", { class: "muted small" }, [
+          `⏰ ${t("next_reminder")}: `,
+          h("b", null, JOURNAL_KINDS.includes(prog.next_reminder.kind) ? t(`kind_${prog.next_reminder.kind}`) : prog.next_reminder.kind),
+          prog.next_reminder.note ? ` (${prog.next_reminder.note})` : "",
+          ` · ${fmtDuration(prog.next_reminder.due_in, t)}`,
+        ]) : null,
         prog.ramp_remaining != null && prog.ramp_remaining > 0 ? h("div", { class: "muted small" }, [
           `↘ ${t("ramp_in_progress")} ${t("ramp_to")} `,
           h("b", null, [prog.phase_target_temp != null ? `${prog.phase_target_temp} °C` : null,
@@ -1950,7 +1968,7 @@ class CuringChamberPanel extends HTMLElement {
 
   _blankProgram() {
     const category = (this._state && this._state.kind) || "charcuterie";
-    return { id: "", name: "", on_complete: "hold_last", builtin: false, category, phases: [this._blankPhase()] };
+    return { id: "", name: "", on_complete: "hold_last", builtin: false, category, phases: [this._blankPhase()], reminders: [] };
   }
 
   _blankPhase() {
@@ -1998,6 +2016,12 @@ class CuringChamberPanel extends HTMLElement {
     ed.program.name = ed.els.name.value.trim();
     ed.program.on_complete = ed.els.onComplete.value;
     ed.program.category = ed.els.category.value;
+    ed.program.reminders = (ed.els.reminders || []).map((row) => ({
+      kind: row.kind.value,
+      every_hours: num(row.every),
+      note: row.note.value.trim() || null,
+      phases: row.phase.value ? [row.phase.value] : [],
+    }));
     ed.program.phases = ed.els.phases.map((row) => ({
       name: row.name.value,
       target_temp: num(row.temp),
@@ -2098,6 +2122,31 @@ class CuringChamberPanel extends HTMLElement {
       }
     });
 
+    // Care reminders ----------------------------------------------------------
+    els.reminders = [];
+    const remindersBox = h("div", { title: t("reminder_hint") });
+    const phaseNames = p.phases.map((ph) => ph.name).filter(Boolean);
+    (p.reminders || []).forEach((r, i) => {
+      const row = {};
+      const known = JOURNAL_KINDS.includes(r.kind);
+      row.kind = h("select", { disabled: readOnly, onchange: validate }, [
+        ...JOURNAL_KINDS.map((k) => h("option", { value: k, selected: r.kind === k }, t(`kind_${k}`))),
+        !known ? h("option", { value: r.kind, selected: true }, r.kind) : null,
+      ]);
+      row.every = h("input", { type: "number", step: "1", min: "1", value: r.every_hours != null ? r.every_hours : "", placeholder: "h", disabled: readOnly, oninput: validate, style: "width:80px" });
+      row.note = h("input", { type: "text", value: r.note || "", placeholder: t("note"), disabled: readOnly, oninput: validate, style: "flex:1;min-width:120px" });
+      const current = (r.phases && r.phases[0]) || "";
+      row.phase = h("select", { disabled: readOnly, onchange: validate }, [
+        h("option", { value: "", selected: !current }, t("all_phases")),
+        ...phaseNames.map((n) => h("option", { value: n, selected: current === n }, n)),
+      ]);
+      els.reminders.push(row);
+      remindersBox.appendChild(h("div", { class: "phase-ramp" }, [
+        row.kind, h("span", null, t("every_hours")), row.every, row.phase, row.note,
+        !readOnly ? h("button", { class: "ghost sm", title: t("remove"), onclick: () => { this._readEditor(); p.reminders.splice(i, 1); this._renderTab(); } }, "✕") : null,
+      ]));
+    });
+
     this._validationBox = h("div");
     this._renderValidation();
 
@@ -2113,6 +2162,9 @@ class CuringChamberPanel extends HTMLElement {
       h("h2", { style: "margin-top:16px" }, t("phases")),
       phasesBox,
       !readOnly ? h("div", { style: "margin-top:8px" }, h("button", { class: "outline sm", onclick: () => { this._readEditor(); p.phases.push(this._blankPhase()); this._renderTab(); } }, `+ ${t("add_phase")}`)) : null,
+      (!readOnly || (p.reminders || []).length) ? h("h2", { style: "margin-top:16px" }, t("reminders")) : null,
+      remindersBox,
+      !readOnly ? h("div", { style: "margin-top:8px" }, h("button", { class: "outline sm", onclick: () => { this._readEditor(); (p.reminders = p.reminders || []).push({ kind: "turned", every_hours: 48, note: "", phases: [] }); this._renderTab(); } }, `+ ${t("add_reminder")}`)) : null,
       this._validationBox,
       h("div", { class: "row", style: "margin-top:16px" }, [
         !readOnly ? h("button", { onclick: () => this._saveProgram() }, t("save")) : null,
@@ -2157,7 +2209,12 @@ class CuringChamberPanel extends HTMLElement {
       if (ph.ramp_hours != null && ph.ramp_hours > 0) out.ramp_hours = ph.ramp_hours;
       return out;
     });
-    return { id: p.id, name: p.name, on_complete: p.on_complete || "hold_last", category: p.category || "charcuterie", phases };
+    const reminders = (p.reminders || []).map((r) => {
+      const out = { kind: r.kind, every_hours: r.every_hours, phases: r.phases || [] };
+      if (r.note) out.note = r.note;
+      return out;
+    });
+    return { id: p.id, name: p.name, on_complete: p.on_complete || "hold_last", category: p.category || "charcuterie", phases, reminders };
   }
 
   async _saveProgram() {

@@ -537,3 +537,34 @@ async def test_weigh_in_reminder(hass: HomeAssistant, seed_states) -> None:
     assert not coordinator.data["batches"][0]["weigh_in_due"]
     assert notif_id not in hass.data["persistent_notification"]
     assert batch_id not in coordinator.store.weigh_in_reminders
+
+
+async def test_program_reminder_notifies_and_fires_event(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    events: list[dict] = []
+    hass.bus.async_listen(
+        EVENT_CURING_CHAMBER,
+        lambda e: events.append(e.data) if e.data.get("type") == "reminder" else None,
+    )
+    await _create_batch(hass, program_id="cheese_washed", start_program=True)
+    batch_id = next(iter(coordinator.batches))
+    await hass.services.async_call(DOMAIN, SERVICE_NEXT_PHASE, {}, blocking=True)
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
+    assert coordinator.data["phase_name"] == "ripening"
+    nxt = coordinator.data["next_reminder"]
+    assert nxt["kind"] == "turned"
+    assert 47 * 3600 < nxt["due_in"] <= 48 * 3600
+    assert hass.states.get("sensor.test_chamber_current_phase").attributes["next_reminder"] == nxt
+
+    # Two days into ripening: both reminders fire once.
+    coordinator.program.state.phase_started_at -= 49 * 3600
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert sorted(e["kind"] for e in events) == ["turned", "washed"]
+    assert events[0]["batch_ids"] == [batch_id]
+    assert f"{DOMAIN}_{config_entry.entry_id}_reminder_0" in hass.data["persistent_notification"]
+    await coordinator.async_refresh()
+    assert len(events) == 2

@@ -126,6 +126,7 @@ EVENT_TYPE_MANUAL_ACTION: Final = "manual_action_required"
 EVENT_TYPE_BATCH_COMPLETED: Final = "batch_completed"
 EVENT_TYPE_BATCH_EVENT: Final = "batch_event"
 EVENT_TYPE_WEIGH_IN_DUE: Final = "weigh_in_due"
+EVENT_TYPE_REMINDER: Final = "reminder"
 
 # --- Storage -----------------------------------------------------------------
 STORAGE_VERSION: Final = 1

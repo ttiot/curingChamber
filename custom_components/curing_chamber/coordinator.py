@@ -50,6 +50,7 @@ from .const import (
     EVENT_TYPE_MANUAL_ACTION,
     EVENT_TYPE_PHASE_CHANGED,
     EVENT_TYPE_PROGRAM_COMPLETED,
+    EVENT_TYPE_REMINDER,
     EVENT_TYPE_WEIGH_IN_DUE,
     PHOTO_STORAGE_DIR,
     PHOTO_URL_BASE,
@@ -262,6 +263,8 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         program_events = self.program.tick(now, weight=inputs.weight, core_temp=inputs.product_temp)
         for event in program_events:
             self._handle_program_event(event, inputs)
+        for due in self.program.due_reminders(now):
+            self._handle_reminder(due)
 
         self._check_batch_completion(now)
         self._check_weigh_in_reminders(now)
@@ -725,6 +728,44 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             body = messages.program_message("phase_ended", language, phase=event.phase_name)
         title = f"{messages.title(language)} — {self.chamber_name}"
         persistent_notification.async_create(self.hass, body, title=title)
+
+    def _handle_reminder(self, due: Any) -> None:
+        """Notify a program care reminder and point at the batches concerned."""
+        language = self.hass.config.language
+        program = self.program.program
+        program_name = program.name if program else ""
+        action = messages.reminder_action(due.reminder.kind, due.reminder.note, language)
+        body = messages.program_message(
+            "reminder", language, program=program_name, phase=due.phase_name, action=action
+        )
+        title = f"{messages.title(language)} — {self.chamber_name}"
+        notif_id = f"{DOMAIN}_{self.entry.entry_id}_reminder_{due.index}"
+        persistent_notification.async_create(self.hass, body, title=title, notification_id=notif_id)
+        for service in conf.get(self.entry, conf.CONF_NOTIFY_SERVICES, []) or []:
+            self._call_notify_service(service, title, body)
+        program_id = self.program.state.program_id
+        batch_ids = [
+            b.id
+            for b in self.batches.values()
+            if b.status is BatchStatus.ACTIVE and (b.program_id == program_id or not b.program_id)
+        ]
+        self._fire_event(
+            EVENT_TYPE_REMINDER,
+            {
+                "kind": due.reminder.kind,
+                "note": due.reminder.note,
+                "program": program_name,
+                "phase": due.phase_name,
+                "batch_ids": batch_ids,
+            },
+        )
+
+    def _next_reminder(self, now: float) -> dict[str, Any] | None:
+        nxt = self.program.next_reminder(now)
+        if nxt is None:
+            return None
+        reminder, remaining = nxt
+        return {"kind": reminder.kind, "note": reminder.note, "due_in": remaining}
 
     @callback
     def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
@@ -1230,6 +1271,8 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "phase_target_temp": data.get("phase_target_temp"),
                 "phase_target_humidity": data.get("phase_target_humidity"),
                 "ramp_remaining": data.get("ramp_remaining"),
+                "next_reminder": data.get("next_reminder"),
+                "reminders": [r.to_dict() for r in program.reminders] if program else [],
                 "started_at": state.started_at,
                 "phase_started_at": state.phase_started_at,
                 "phases": [p.to_dict() for p in program.phases] if program else [],
@@ -1319,6 +1362,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "phase_target_temp": self.program.active_targets()[0],
             "phase_target_humidity": self.program.active_targets()[1],
             "ramp_remaining": self.program.ramp_remaining(now),
+            "next_reminder": self._next_reminder(now),
             "active_alerts": sorted(self._active_alerts),
             "alert_details": dict(self._alert_details),
             "counters": dict(self.store.counters),

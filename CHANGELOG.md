@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Program care reminders.** A program may carry `reminders`
+  (`kind`, `every_hours`, optional `note` and `phases`): while it runs, a
+  notification suggests that journal entry at the given interval (wall clock,
+  not while paused; a phase-scoped reminder counts from the phase start), with
+  a `reminder` bus event carrying the active batches concerned. The panel
+  editor has a *Care reminders* section, the program card shows the next
+  reminder, and the *Current phase* sensor exposes it in `next_reminder`.
+  Cheese presets turn (and wash) the products every day or two.
 - **Weigh-in reminder.** New *Weigh-in reminder after N days* option in the
   notifications step (default 7 days, 0 disables): an active batch with no
   weigh-in for that long gets a persistent notification (and the configured
