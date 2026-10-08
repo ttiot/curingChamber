@@ -15,7 +15,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTemperature, UnitOfTime
 
 from . import config as conf
-from .const import DOMAIN
+from .const import COUNTER_DEGRADED, DOMAIN
 from .entity import CuringChamberEntity
 from .regulation import Actuator
 
@@ -80,6 +80,15 @@ SENSORS: tuple[CuringSensorDescription, ...] = (
     ),
     CuringSensorDescription(
         key="phase_remaining",
+        attrs_fn=lambda d: {
+            "phase_target_temp": d.get("phase_target_temp"),
+            "phase_target_humidity": d.get("phase_target_humidity"),
+            "ramp_remaining_hours": (
+                round(d["ramp_remaining"] / 3600.0, 2)
+                if d.get("ramp_remaining") is not None
+                else None
+            ),
+        },
         translation_key="phase_remaining",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.HOURS,
@@ -145,6 +154,7 @@ async def async_setup_entry(
     for actuator, key in actuator_conf.items():
         if conf.get(entry, key):
             entities.append(CuringChamberRuntimeSensor(coordinator, actuator))
+    entities.append(CuringChamberDegradedHoursSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -192,3 +202,26 @@ class CuringChamberRuntimeSensor(CuringChamberEntity, SensorEntity):
     def native_value(self) -> float:
         counters = (self.coordinator.data or {}).get("counters", {})
         return round(counters.get(self._actuator.value, 0.0), 2)
+
+
+class CuringChamberDegradedHoursSensor(CuringChamberEntity, SensorEntity):
+    """Cumulative hours spent in degraded mode (a manual action was required).
+
+    Long-term statistics of this counter show how often the chamber's actuators
+    fail to hold the targets on their own — a reliability indicator.
+    """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.HOURS
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 1
+    _attr_translation_key = "degraded_hours"
+
+    def __init__(self, coordinator: CuringChamberCoordinator) -> None:
+        super().__init__(coordinator, "degraded_hours")
+
+    @property
+    def native_value(self) -> float:
+        counters = (self.coordinator.data or {}).get("counters", {})
+        return round(counters.get(COUNTER_DEGRADED, 0.0), 2)

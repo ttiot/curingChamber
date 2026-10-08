@@ -159,6 +159,26 @@ const STR = {
     warnings: "Warnings",
     copy_suffix: "copy",
     read_only_preset: "Built-in preset — duplicate it to edit.",
+    ramp: "Ramp",
+    ramp_from: "Ramp from",
+    ramp_hours: "over (h)",
+    ramp_hint: "Optional: the targets move linearly from these start values to the phase targets over the given hours.",
+    ramp_in_progress: "ramp in progress",
+    ramp_to: "to",
+    category: "Category",
+    cat_charcuterie: "Charcuterie",
+    cat_cheese: "Cheese",
+    kind_charcuterie: "Charcuterie drying chamber",
+    kind_cheese: "Cheese ripening cave",
+    presets: "Presets",
+    my_programs: "My programs",
+    export: "Export",
+    export_all: "Export all",
+    import: "Import",
+    imported: "imported",
+    skipped: "skipped (already exist)",
+    import_overwrite: "Replace programs that already exist?",
+    import_invalid: "Not a valid program file.",
     // history
     no_history: "No completed or archived batch yet.",
     select_to_compare: "Tick batches to overlay their drying curves.",
@@ -304,6 +324,26 @@ const STR = {
     warnings: "Avertissements",
     copy_suffix: "copie",
     read_only_preset: "Preset intégré — dupliquez-le pour le modifier.",
+    ramp: "Rampe",
+    ramp_from: "Rampe depuis",
+    ramp_hours: "sur (h)",
+    ramp_hint: "Optionnel : les consignes passent linéairement de ces valeurs de départ aux consignes de la phase sur le nombre d'heures indiqué.",
+    ramp_in_progress: "rampe en cours",
+    ramp_to: "vers",
+    category: "Catégorie",
+    cat_charcuterie: "Charcuterie",
+    cat_cheese: "Fromage",
+    kind_charcuterie: "Séchoir à charcuterie",
+    kind_cheese: "Cave d'affinage à fromages",
+    presets: "Presets",
+    my_programs: "Mes programmes",
+    export: "Exporter",
+    export_all: "Tout exporter",
+    import: "Importer",
+    imported: "importé(s)",
+    skipped: "ignoré(s) (déjà existants)",
+    import_overwrite: "Remplacer les programmes qui existent déjà ?",
+    import_invalid: "Fichier de programmes invalide.",
     no_history: "Aucun lot terminé ou archivé pour l'instant.",
     select_to_compare: "Cochez des lots pour superposer leurs courbes de séchage.",
     final_loss: "Perte finale",
@@ -429,6 +469,41 @@ function fmtDuration(seconds, t) {
 function hoursToText(hours, t) {
   if (hours == null) return "—";
   return fmtDuration(hours * 3600, t);
+}
+
+function hasRamp(phase) {
+  return phase.ramp_hours != null && phase.ramp_hours > 0 && (phase.start_temp != null || phase.start_humidity != null);
+}
+
+/** Offer a JSON object as a file download (no server round-trip). */
+function downloadJson(name, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = h("a", { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Let the user pick a .json file and resolve with its parsed content (null if cancelled). */
+function pickJsonFile() {
+  return new Promise((resolve, reject) => {
+    const input = h("input", { type: "file", accept: "application/json,.json", style: "display:none" });
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      input.remove();
+      if (!file) return resolve(null);
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => {
+        try { resolve(JSON.parse(String(reader.result))); } catch (err) { reject(err); }
+      };
+      reader.readAsText(file);
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 function slugify(text) {
@@ -611,6 +686,11 @@ const STYLES = `
   .phase-row input, .phase-row select { width: 100%; min-width: 0; }
   .phase-row .ctl { display: flex; gap: 2px; }
   .phase-head { font-size: .75em; color: var(--secondary-text-color); border-bottom: none; padding-bottom: 0; }
+  .phase-ramp { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 0 8px 12px; font-size: .85em;
+    color: var(--secondary-text-color); border-bottom: 1px solid var(--divider-color); margin-bottom: 2px; }
+  .phase-ramp input { width: 72px; }
+  .phase-ramp .arrow { opacity: .7; }
+  .tl-phase.ramp::before { content: "↘ "; opacity: .8; }
   @media (max-width: 720px) {
     .phase-row { grid-template-columns: 1fr 1fr 1fr; }
     .phase-head { display: none; }
@@ -1301,6 +1381,13 @@ class CuringChamberPanel extends HTMLElement {
           `${t("phase")} ${(prog.phase_index || 0) + 1}/${(prog.phases || []).length}: ${prog.phase_name || "—"}`,
           prog.phase_remaining != null ? ` · ${fmtDuration(prog.phase_remaining, t)} ${t("remaining")}` : "",
         ]),
+        prog.ramp_remaining != null && prog.ramp_remaining > 0 ? h("div", { class: "muted small" }, [
+          `↘ ${t("ramp_in_progress")} ${t("ramp_to")} `,
+          h("b", null, [prog.phase_target_temp != null ? `${prog.phase_target_temp} °C` : null,
+            prog.phase_target_temp != null && prog.phase_target_humidity != null ? " / " : null,
+            prog.phase_target_humidity != null ? `${prog.phase_target_humidity} %` : null]),
+          ` · ${fmtDuration(prog.ramp_remaining, t)} ${t("remaining")}`,
+        ]) : null,
       ]));
       card.appendChild(this._timeline(prog.phases || [], prog.phase_index || 0));
       card.appendChild(h("div", { class: "row", style: "margin-top:8px" }, [
@@ -1319,10 +1406,11 @@ class CuringChamberPanel extends HTMLElement {
     const wrap = h("div", { class: "timeline" });
     const total = phases.reduce((acc, p) => acc + (p.duration_hours || 24), 0) || 1;
     phases.forEach((p, i) => {
-      const cls = i < currentIndex ? "tl-phase done" : i === currentIndex ? "tl-phase current" : "tl-phase";
+      const ramp = hasRamp(p);
+      const cls = (i < currentIndex ? "tl-phase done" : i === currentIndex ? "tl-phase current" : "tl-phase") + (ramp ? " ramp" : "");
       const grow = Math.max(0.5, ((p.duration_hours || 24) / total) * phases.length);
       const detail = [p.target_temp != null ? `${p.target_temp}°` : null, p.target_humidity != null ? `${p.target_humidity}%` : null]
-        .filter(Boolean).join(" / ");
+        .filter(Boolean).join(" / ") + (ramp ? ` (${t("ramp").toLowerCase()} ${p.ramp_hours} h)` : "");
       const end = p.end_kind === "weight_loss" ? `-${p.weight_loss_pct || "?"}%`
         : p.end_kind === "manual" ? t("end_manual") : hoursToText(p.duration_hours, t);
       wrap.appendChild(h("div", { class: cls, style: `flex-grow:${grow.toFixed(2)}`, title: `${p.name} · ${detail} · ${end}` },
@@ -1645,39 +1733,100 @@ class CuringChamberPanel extends HTMLElement {
     const t = (k) => this._t(k);
     if (this._editing) return this._programEditor();
     const wrap = h("div");
+    const mine = this._programs.filter((p) => !p.builtin);
+    const presets = this._programs.filter((p) => p.builtin);
+    const kind = (this._state && this._state.kind) || "charcuterie";
     wrap.appendChild(h("div", { class: "row between", style: "margin-bottom:12px" }, [
-      h("span", { class: "muted small" }, `${this._programs.length} ${t("tab_programs").toLowerCase()}`),
-      h("button", { onclick: () => this._openEditor(this._blankProgram(), true) }, `+ ${t("new_program")}`),
+      h("span", { class: "muted small" }, `${this._programs.length} ${t("tab_programs").toLowerCase()} · ${t(`kind_${kind}`)}`),
+      h("div", { class: "row" }, [
+        h("button", { class: "outline sm", onclick: () => this._importPrograms() }, `⇧ ${t("import")}`),
+        mine.length ? h("button", { class: "outline sm", onclick: () => this._exportPrograms(mine) }, `⇩ ${t("export_all")}`) : null,
+        h("button", { onclick: () => this._openEditor(this._blankProgram(), true) }, `+ ${t("new_program")}`),
+      ]),
     ]));
     if (!this._programs.length) {
       wrap.appendChild(h("div", { class: "empty" }, t("no_programs")));
       return wrap;
     }
-    const grid = h("div", { class: "grid" });
-    for (const p of this._programs) {
-      const totalHours = p.phases.reduce((acc, ph) => acc + (ph.duration_hours || 0), 0);
-      grid.appendChild(h("div", { class: "card" }, [
-        h("h2", null, [h("span", { class: "grow" }, p.name), p.builtin ? h("span", { class: "badge" }, t("preset")) : null]),
-        h("div", { class: "muted small" }, [`${p.phases.length} ${t("phases").toLowerCase()} · ~${hoursToText(totalHours, t)} · `, h("code", null, p.id)]),
-        this._timeline(p.phases, -1),
-        h("div", { class: "row", style: "margin-top:8px" }, [
-          h("button", { class: "outline sm", onclick: () => this._openEditor(p, false) }, p.builtin ? t("view") : t("edit")),
-          h("button", { class: "outline sm", onclick: () => this._openEditor(this._duplicate(p), true) }, t("duplicate")),
-          h("button", { class: "sm", onclick: async () => { if (await this._service("start_program", { program_id: p.id })) { this._showToast(t("started")); this._setTab("chamber"); } } }, t("start_this")),
-          !p.builtin ? h("button", { class: "danger sm", onclick: () => this._deleteProgram(p.id) }, t("delete")) : null,
-        ]),
-      ]));
-    }
-    wrap.appendChild(grid);
+    const section = (title, programs) => {
+      if (!programs.length) return;
+      wrap.appendChild(h("h2", { style: "margin:16px 0 8px" }, title));
+      const grid = h("div", { class: "grid" });
+      for (const p of programs) grid.appendChild(this._programListCard(p));
+      wrap.appendChild(grid);
+    };
+    section(t("my_programs"), mine);
+    section(t("presets"), presets);
     return wrap;
   }
 
+  _programListCard(p) {
+    const t = (k) => this._t(k);
+    const totalHours = p.phases.reduce((acc, ph) => acc + (ph.duration_hours || 0), 0);
+    return h("div", { class: "card" }, [
+      h("h2", null, [
+        h("span", { class: "grow" }, p.name),
+        p.category ? h("span", { class: "badge", style: "margin-right:4px" }, t(`cat_${p.category}`)) : null,
+        p.builtin ? h("span", { class: "badge" }, t("preset")) : null,
+      ]),
+      h("div", { class: "muted small" }, [`${p.phases.length} ${t("phases").toLowerCase()} · ~${hoursToText(totalHours, t)} · `, h("code", null, p.id)]),
+      this._timeline(p.phases, -1),
+      h("div", { class: "row", style: "margin-top:8px" }, [
+        h("button", { class: "outline sm", onclick: () => this._openEditor(p, false) }, p.builtin ? t("view") : t("edit")),
+        h("button", { class: "outline sm", onclick: () => this._openEditor(this._duplicate(p), true) }, t("duplicate")),
+        h("button", { class: "sm", onclick: async () => { if (await this._service("start_program", { program_id: p.id })) { this._showToast(t("started")); this._setTab("chamber"); } } }, t("start_this")),
+        h("button", { class: "ghost sm", title: t("export"), onclick: () => this._exportPrograms([p]) }, "⇩"),
+        !p.builtin ? h("button", { class: "danger sm", onclick: () => this._deleteProgram(p.id) }, t("delete")) : null,
+      ]),
+    ]);
+  }
+
+  /** Download programs as a portable JSON file (same envelope as the export_programs service). */
+  _exportPrograms(programs) {
+    const cleaned = programs.map((p) => ({ ...this._cleanProgram(p) }));
+    const name = programs.length === 1 ? `curing-chamber-${programs[0].id}.json` : "curing-chamber-programs.json";
+    downloadJson(name, { format: "curing_chamber/programs", version: 1, programs: cleaned });
+  }
+
+  /** Pick a JSON file (export envelope, list or single program) and import it. */
+  async _importPrograms() {
+    const t = (k) => this._t(k);
+    let data;
+    try {
+      data = await pickJsonFile();
+    } catch (err) {
+      this._showToast(t("import_invalid"), true);
+      return;
+    }
+    if (data == null) return;
+    const list = Array.isArray(data) ? data : data && Array.isArray(data.programs) ? data.programs : data && data.phases ? [data] : null;
+    if (!list || !list.length) { this._showToast(t("import_invalid"), true); return; }
+    const existing = new Set(this._programs.filter((p) => !p.builtin).map((p) => p.id));
+    const clash = list.some((p) => p && existing.has(p.id));
+    const overwrite = clash ? window.confirm(t("import_overwrite")) : false;
+    try {
+      const result = await this._ws("curing_chamber/program/import", { programs: list, overwrite });
+      const parts = [`${result.imported.length} ${t("imported")}`];
+      if (result.skipped.length) parts.push(`${result.skipped.length} ${t("skipped")}`);
+      this._showToast(parts.join(" · "));
+      await this._loadPrograms();
+      this._renderTab();
+    } catch (err) {
+      this._showError(err);
+    }
+  }
+
   _blankProgram() {
-    return { id: "", name: "", on_complete: "hold_last", builtin: false, phases: [this._blankPhase()] };
+    const category = (this._state && this._state.kind) || "charcuterie";
+    return { id: "", name: "", on_complete: "hold_last", builtin: false, category, phases: [this._blankPhase()] };
   }
 
   _blankPhase() {
-    return { name: "", target_temp: 12, target_humidity: 78, end_kind: "duration", duration_hours: 168, weight_loss_pct: null, notify_end: true };
+    const cheese = this._state && this._state.kind === "cheese";
+    return {
+      name: "", target_temp: cheese ? 12 : 13, target_humidity: cheese ? 90 : 76, end_kind: "duration", duration_hours: 168,
+      weight_loss_pct: null, notify_end: true, start_temp: null, start_humidity: null, ramp_hours: null,
+    };
   }
 
   _duplicate(p) {
@@ -1716,6 +1865,7 @@ class CuringChamberPanel extends HTMLElement {
     ed.program.id = ed.els.id.value.trim();
     ed.program.name = ed.els.name.value.trim();
     ed.program.on_complete = ed.els.onComplete.value;
+    ed.program.category = ed.els.category.value;
     ed.program.phases = ed.els.phases.map((row) => ({
       name: row.name.value,
       target_temp: num(row.temp),
@@ -1724,6 +1874,9 @@ class CuringChamberPanel extends HTMLElement {
       duration_hours: num(row.hours),
       weight_loss_pct: num(row.loss),
       notify_end: row.notify.checked,
+      start_temp: num(row.startTemp),
+      start_humidity: num(row.startHum),
+      ramp_hours: num(row.rampHours),
     }));
   }
 
@@ -1757,6 +1910,11 @@ class CuringChamberPanel extends HTMLElement {
       h("option", { value: "hold_last", selected: p.on_complete === "hold_last" }, t("hold_last")),
       h("option", { value: "stop", selected: p.on_complete === "stop" }, t("stop_regulation")),
     ]);
+    const category = p.category || (this._state && this._state.kind) || "charcuterie";
+    els.category = h("select", { disabled: readOnly, onchange: validate }, [
+      h("option", { value: "charcuterie", selected: category === "charcuterie" }, t("cat_charcuterie")),
+      h("option", { value: "cheese", selected: category === "cheese" }, t("cat_cheese")),
+    ]);
 
     const phasesBox = h("div");
     phasesBox.appendChild(h("div", { class: "phase-row phase-head" }, [
@@ -1777,6 +1935,9 @@ class CuringChamberPanel extends HTMLElement {
       row.hours = h("input", { type: "number", step: "1", min: "0", value: ph.duration_hours != null ? ph.duration_hours : "", placeholder: "h", disabled: readOnly, oninput: validate });
       row.loss = h("input", { type: "number", step: "0.5", min: "0", max: "90", value: ph.weight_loss_pct != null ? ph.weight_loss_pct : "", placeholder: "%", disabled: readOnly, oninput: validate });
       row.notify = h("input", { type: "checkbox", checked: ph.notify_end !== false, disabled: readOnly, onchange: validate });
+      row.startTemp = h("input", { type: "number", step: "0.5", value: ph.start_temp != null ? ph.start_temp : "", placeholder: "°C", disabled: readOnly, oninput: validate, title: t("ramp_hint") });
+      row.startHum = h("input", { type: "number", step: "1", value: ph.start_humidity != null ? ph.start_humidity : "", placeholder: "%", disabled: readOnly, oninput: validate, title: t("ramp_hint") });
+      row.rampHours = h("input", { type: "number", step: "1", min: "0", value: ph.ramp_hours != null ? ph.ramp_hours : "", placeholder: "h", disabled: readOnly, oninput: validate, title: t("ramp_hint") });
       els.phases.push(row);
       phasesBox.appendChild(h("div", { class: "phase-row" }, [
         row.name, row.temp, row.hum, row.endKind, row.hours, row.loss, row.notify,
@@ -1786,6 +1947,12 @@ class CuringChamberPanel extends HTMLElement {
           h("button", { class: "ghost sm", title: t("remove"), disabled: p.phases.length <= 1, onclick: () => { this._readEditor(); p.phases.splice(i, 1); this._renderTab(); } }, "✕"),
         ]) : h("span"),
       ]));
+      if (!readOnly || hasRamp(ph)) {
+        phasesBox.appendChild(h("div", { class: "phase-ramp", title: t("ramp_hint") }, [
+          h("span", null, `↘ ${t("ramp_from")}`), row.startTemp, h("span", null, "°C"), row.startHum, h("span", null, "%"),
+          h("span", { class: "arrow" }, "→"), h("span", null, t("ramp_hours")), row.rampHours,
+        ]));
+      }
     });
 
     this._validationBox = h("div");
@@ -1797,6 +1964,7 @@ class CuringChamberPanel extends HTMLElement {
       h("div", { class: "form" }, [
         h("label", { style: "flex:1;min-width:180px" }, [t("name"), els.name]),
         h("label", { style: "min-width:160px" }, [t("program_id"), els.id]),
+        h("label", null, [t("category"), els.category]),
         h("label", null, [t("on_complete"), els.onComplete]),
       ]),
       h("h2", { style: "margin-top:16px" }, t("phases")),
@@ -1840,9 +2008,12 @@ class CuringChamberPanel extends HTMLElement {
       if (ph.target_humidity != null) out.target_humidity = ph.target_humidity;
       if (ph.duration_hours != null) out.duration_hours = ph.duration_hours;
       if (ph.weight_loss_pct != null) out.weight_loss_pct = ph.weight_loss_pct;
+      if (ph.start_temp != null) out.start_temp = ph.start_temp;
+      if (ph.start_humidity != null) out.start_humidity = ph.start_humidity;
+      if (ph.ramp_hours != null && ph.ramp_hours > 0) out.ramp_hours = ph.ramp_hours;
       return out;
     });
-    return { id: p.id, name: p.name, on_complete: p.on_complete || "hold_last", phases };
+    return { id: p.id, name: p.name, on_complete: p.on_complete || "hold_last", category: p.category || "charcuterie", phases };
   }
 
   async _saveProgram() {

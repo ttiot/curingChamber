@@ -149,6 +149,47 @@ delete_program:
       selector:
         text:
 
+export_programs:
+  name: Export programs
+  description: >-
+    Return the user-defined programs of the chamber as a portable JSON payload
+    (returns a response; use `response_variable`). Feed it to `import_programs`
+    on another chamber or installation.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+
+import_programs:
+  name: Import programs
+  description: >-
+    Import programs into the chamber from an `export_programs` payload, a list
+    of programs or a single program. Existing ids are skipped unless
+    `overwrite` is set; built-in preset ids are never overwritten.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    programs:
+      name: Programs
+      description: >-
+        Export payload (`{"programs": [...]}`), a list of programs or a single
+        program.
+      required: true
+      example: '{"format": "curing_chamber/programs", "version": 1, "programs": [...]}'
+      selector:
+        object:
+    overwrite:
+      name: Overwrite
+      description: Replace user programs that already have the same id.
+      default: false
+      selector:
+        boolean:
+
 create_batch:
   name: Create batch
   description: >-

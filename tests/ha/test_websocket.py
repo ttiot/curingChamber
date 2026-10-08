@@ -68,6 +68,8 @@ async def test_chambers_and_state(
     assert state["temp"] == 13.0
     assert state["program"]["status"] == "idle"
     assert state["program"]["phases"] == []
+    assert state["kind"] == "charcuterie"
+    assert state["program"]["ramp_remaining"] is None
     assert state["batches"] == []
     assert state["entities"]["manual_weight"] == MANUAL_WEIGHT
     assert state["entities"]["regulation_switch"] == "switch.test_chamber_regulation"
@@ -310,3 +312,52 @@ async def test_program_editor_commands(
     assert msg["result"] == {"deleted": True}
     msg = await _call(client, "program/delete", entry_id=entry_id, program_id=preset_id)
     assert msg["result"] == {"deleted": False}
+
+
+async def test_program_import_command(
+    hass: HomeAssistant, hass_ws_client, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    client = await hass_ws_client(hass)
+    entry_id = config_entry.entry_id
+    program = {
+        "id": "ramped",
+        "name": "Ramped",
+        "category": "cheese",
+        "phases": [
+            {
+                "name": "ripening",
+                "target_temp": 12,
+                "target_humidity": 90,
+                "start_temp": 16,
+                "ramp_hours": 24,
+                "duration_hours": 200,
+            },
+        ],
+    }
+    payload = {"format": "curing_chamber/programs", "version": 1, "programs": [program]}
+
+    msg = await _call(client, "program/import", entry_id=entry_id, programs=payload)
+    assert msg["success"], msg
+    assert msg["result"]["imported"] == ["ramped"]
+    assert msg["result"]["skipped"] == []
+    stored = coordinator.store.programs["ramped"]
+    assert stored["category"] == "cheese"
+    assert stored["phases"][0]["ramp_hours"] == 24.0
+
+    msg = await _call(client, "program/import", entry_id=entry_id, programs=[program])
+    assert msg["result"] == {"imported": [], "skipped": ["ramped"], "warnings": []}
+    msg = await _call(
+        client, "program/import", entry_id=entry_id, programs=[program], overwrite=True
+    )
+    assert msg["result"]["imported"] == ["ramped"]
+
+    msg = await _call(client, "program/import", entry_id=entry_id, programs={"programs": []})
+    assert not msg["success"]
+    assert msg["error"]["code"] == "invalid_format"
+
+    # The listing carries the category and ramp fields the panel editor needs.
+    msg = await _call(client, "programs", entry_id=entry_id)
+    mine = next(p for p in msg["result"] if p["id"] == "ramped")
+    assert mine["category"] == "cheese"
+    assert mine["phases"][0]["start_temp"] == 16.0

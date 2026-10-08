@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-08
+
+### Added
+- **Setpoint ramps.** A phase may carry `start_temp` / `start_humidity` and
+  `ramp_hours`: the active targets move linearly from the start values to the
+  phase targets over the first `ramp_hours` hours (paused time excluded), then
+  hold. The panel editor has a ramp line per phase, the program card shows the
+  ramp in progress and the *Phase time remaining* sensor exposes the final
+  phase targets and the ramp time left in its attributes.
+- **Chamber kind** (`chamber_kind`: `charcuterie` or `cheese`) in the first
+  config step and in the *Regulation & safety* options. A chamber lists the
+  presets of its kind only (any preset can still be started by id); the
+  condensation alert margin is now an option (`condensation_margin`) and
+  defaults to 0.5 °C for a cheese cave (1 °C otherwise).
+- **New presets.** Charcuterie: chorizo (ramped drying), lomo embuchado
+  (ramped), viande des Grisons, jambon cru. Cheese cave: bloomy rind, washed
+  rind, pressed (ramped), blue, lactic / goat, cheese cave hold. Programs carry
+  a `category` (`charcuterie` by default, or `cheese`).
+- **Program import / export.** Services `export_programs` (returns a portable
+  `{"format": "curing_chamber/programs", "version": 1, "programs": [...]}`
+  payload) and `import_programs` (payload, list or single program; `overwrite`
+  flag; preset ids are never overwritten). Websocket `program/import`. The
+  panel's Programs view gets **Export** / **Import** buttons working on `.json`
+  files, and groups *My programs* and *Presets*.
+- **Degraded mode hours** diagnostic sensor (`total_increasing`): cumulative
+  hours during which a manual action was required, for long-term statistics.
+
+### Changed
+- `select.<chamber>_program` options now depend on the chamber kind.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added
@@ -111,7 +141,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ttiot/curingChamber/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ttiot/curingChamber/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ttiot/curingChamber/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ttiot/curingChamber/compare/v0.2.0...v0.3.0

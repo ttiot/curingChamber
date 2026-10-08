@@ -7,6 +7,7 @@
         "description": "Nommez la chambre et sélectionnez ses capteurs. La température et l'hygrométrie sont nécessaires pour réguler, mais l'intégration s'installe même sans (mode surveillance seule).",
         "data": {
           "name": "Nom",
+          "chamber_kind": "Type de chambre",
           "temp_sensor": "Capteur de température",
           "humidity_sensor": "Capteur d'hygrométrie",
           "temp_sensor_2": "Seconde sonde de température (optionnel)",
@@ -88,8 +89,9 @@
       },
       "regulation": {
         "title": "Régulation & sécurité",
-        "description": "Hystérésis, protection du compresseur et limites de sécurité. Les valeurs par défaut sont raisonnables ; modifiez-les avec précaution.",
+        "description": "Hystérésis, protection du compresseur et limites de sécurité. Les valeurs par défaut sont raisonnables ; modifiez-les avec précaution. Le type de chambre sélectionne les presets proposés (charcuterie ou cave à fromages) et la marge de condensation par défaut.",
         "data": {
+          "chamber_kind": "Type de chambre",
           "temp_deadband": "Bande morte température (±°C)",
           "humidity_deadband": "Bande morte hygrométrie (±%HR)",
           "cool_min_off": "Temps minimum OFF du froid (s)",
@@ -102,6 +104,7 @@
           "temp_abs_max": "Température maximale absolue (°C)",
           "humidity_abs_min": "Hygrométrie minimale absolue (%HR)",
           "humidity_abs_max": "Hygrométrie maximale absolue (%HR)",
+          "condensation_margin": "Marge d'alerte condensation au-dessus du point de rosée (°C)",
           "degraded_delay": "Délai d'entrée en mode dégradé (s)",
           "degraded_reminder": "Intervalle de rappel des alertes (s)",
           "door_open_alert_minutes": "Délai d'alerte porte ouverte (min)",
@@ -170,6 +173,9 @@
       },
       "reference_batch_eta": {
         "name": "Fin estimée du lot de référence"
+      },
+      "degraded_hours": {
+        "name": "Heures en mode dégradé"
       }
     },
     "binary_sensor": {
@@ -222,6 +228,14 @@
       },
       "manual_weight": {
         "name": "Poids manuel"
+      }
+    }
+  },
+  "selector": {
+    "chamber_kind": {
+      "options": {
+        "charcuterie": "Séchoir à charcuterie",
+        "cheese": "Cave d'affinage à fromages"
       }
     }
   }

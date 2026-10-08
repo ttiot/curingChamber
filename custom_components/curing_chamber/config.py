@@ -22,3 +22,16 @@ def get(entry: ConfigEntry, key: str, default: Any = None) -> Any:
     if key in entry.data:
         return entry.data[key]
     return default
+
+
+def chamber_kind(entry: ConfigEntry) -> str:
+    """Return the chamber kind (charcuterie / cheese), defaulting to charcuterie."""
+    kind = get(entry, CONF_CHAMBER_KIND, DEFAULT_CHAMBER_KIND)  # noqa: F405
+    return str(kind) if kind in CHAMBER_KINDS else DEFAULT_CHAMBER_KIND  # noqa: F405
+
+
+def condensation_margin_default(merged: dict[str, Any]) -> float:
+    """Default condensation margin for a chamber of the given (merged) config."""
+    if merged.get(CONF_CHAMBER_KIND) == CHAMBER_KIND_CHEESE:  # noqa: F405
+        return float(DEFAULT_CONDENSATION_MARGIN_CHEESE)  # noqa: F405
+    return float(DEFAULT_CONDENSATION_MARGIN)  # noqa: F405

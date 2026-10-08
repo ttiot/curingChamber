@@ -7,6 +7,7 @@
         "description": "Name the chamber and select its sensors. Temperature and humidity are needed to regulate, but the integration installs even without them (monitoring-only).",
         "data": {
           "name": "Name",
+          "chamber_kind": "Chamber kind",
           "temp_sensor": "Temperature sensor",
           "humidity_sensor": "Humidity sensor",
           "temp_sensor_2": "Second temperature sensor (optional)",
@@ -88,8 +89,9 @@
       },
       "regulation": {
         "title": "Regulation & safety",
-        "description": "Hysteresis, compressor protection and safety limits. Defaults are sensible; adjust with care.",
+        "description": "Hysteresis, compressor protection and safety limits. Defaults are sensible; adjust with care. The chamber kind selects the presets offered (charcuterie or cheese cave) and the default condensation margin.",
         "data": {
+          "chamber_kind": "Chamber kind",
           "temp_deadband": "Temperature deadband (±°C)",
           "humidity_deadband": "Humidity deadband (±%RH)",
           "cool_min_off": "Cooling minimum OFF time (s)",
@@ -102,6 +104,7 @@
           "temp_abs_max": "Absolute maximum temperature (°C)",
           "humidity_abs_min": "Absolute minimum humidity (%RH)",
           "humidity_abs_max": "Absolute maximum humidity (%RH)",
+          "condensation_margin": "Condensation alert margin above dew point (°C)",
           "degraded_delay": "Degraded-mode onset delay (s)",
           "degraded_reminder": "Alert reminder interval (s)",
           "door_open_alert_minutes": "Door-open alert delay (min)",
@@ -170,6 +173,9 @@
       },
       "reference_batch_eta": {
         "name": "Reference batch estimated end"
+      },
+      "degraded_hours": {
+        "name": "Degraded mode hours"
       }
     },
     "binary_sensor": {
@@ -222,6 +228,14 @@
       },
       "manual_weight": {
         "name": "Manual weight"
+      }
+    }
+  },
+  "selector": {
+    "chamber_kind": {
+      "options": {
+        "charcuterie": "Charcuterie drying chamber",
+        "cheese": "Cheese ripening cave"
       }
     }
   }

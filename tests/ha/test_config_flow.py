@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from custom_components.curing_chamber.const import (
+    CHAMBER_KIND_CHEESE,
+    CONF_CHAMBER_KIND,
+    CONF_CONDENSATION_MARGIN,
     CONF_COOL_SWITCH,
     CONF_NAME,
     CONF_TEMP_DEADBAND,
@@ -22,7 +25,11 @@ async def test_full_config_flow(hass: HomeAssistant) -> None:
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {CONF_NAME: "My Chamber", CONF_TEMP_SENSOR: TEMP_ENTITY},
+        {
+            CONF_NAME: "My Chamber",
+            CONF_CHAMBER_KIND: CHAMBER_KIND_CHEESE,
+            CONF_TEMP_SENSOR: TEMP_ENTITY,
+        },
     )
     assert result["step_id"] == "actuators"
 
@@ -38,6 +45,7 @@ async def test_full_config_flow(hass: HomeAssistant) -> None:
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["title"] == "My Chamber"
     assert result["data"][CONF_TEMP_SENSOR] == TEMP_ENTITY
+    assert result["data"][CONF_CHAMBER_KIND] == CHAMBER_KIND_CHEESE
 
 
 async def test_options_flow_regulation(hass: HomeAssistant, config_entry, seed_states) -> None:
@@ -55,7 +63,18 @@ async def test_options_flow_regulation(hass: HomeAssistant, config_entry, seed_s
     assert result["step_id"] == "regulation"
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_TEMP_DEADBAND: 1.0}
+        result["flow_id"],
+        {
+            CONF_TEMP_DEADBAND: 1.0,
+            CONF_CHAMBER_KIND: CHAMBER_KIND_CHEESE,
+            CONF_CONDENSATION_MARGIN: 0.3,
+        },
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert config_entry.options[CONF_TEMP_DEADBAND] == 1.0
+    assert config_entry.options[CONF_CHAMBER_KIND] == CHAMBER_KIND_CHEESE
+    assert config_entry.options[CONF_CONDENSATION_MARGIN] == 0.3
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    assert coordinator.chamber_kind == "cheese"
+    assert coordinator.data["config"].condensation_margin == 0.3

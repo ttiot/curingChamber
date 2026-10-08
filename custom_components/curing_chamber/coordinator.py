@@ -40,6 +40,7 @@ from . import config as conf
 from . import messages
 from .batch import Batch, BatchStatus, WeightSample
 from .const import (
+    COUNTER_DEGRADED,
     DOMAIN,
     EVENT_CURING_CHAMBER,
     EVENT_TYPE_ALERT_CLEARED,
@@ -52,9 +53,9 @@ from .const import (
     PHOTO_URL_BASE,
     PHOTO_WWW_SUBDIR,
 )
-from .program import PRESETS, ProgramEngine, ProgramEventType, ProgramStatus
-from .program.presets import preset_by_id
-from .program.types import Program
+from .program import ProgramEngine, ProgramEventType, ProgramStatus
+from .program.presets import preset_by_id, presets_for
+from .program.types import Program, ProgramCategory
 from .regulation import (
     Actuator,
     Alert,
@@ -251,7 +252,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         now = dt_util.utcnow().timestamp()
         inputs = self._read_inputs(now)
-        reg_config = self._build_config(inputs)
+        reg_config = self._build_config(inputs, now)
 
         # Advance the program (may change active targets and emit events). The
         # weight driving the weight-loss end condition is the reference batch's
@@ -404,10 +405,13 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     # -- Building the regulation config --------------------------------------
 
-    def _active_targets(self) -> tuple[float | None, float | None, bool]:
-        """Return (target_temp, target_humidity, drying_phase)."""
+    def _active_targets(self, now: float) -> tuple[float | None, float | None, bool]:
+        """Return (target_temp, target_humidity, drying_phase).
+
+        During a running phase the targets follow the phase ramp, if any.
+        """
         if self.program.status in (ProgramStatus.RUNNING, ProgramStatus.PAUSED):
-            temp, humidity = self.program.active_targets()
+            temp, humidity = self.program.active_targets(now)
             phase = self.program.current_phase
             drying = bool(phase and phase.name == "drying")
             return temp, humidity, drying
@@ -416,9 +420,9 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return temp, humidity, False
         return self._manual_targets[0], self._manual_targets[1], False
 
-    def _build_config(self, inputs: RegulationInputs) -> RegulationConfig:
+    def _build_config(self, inputs: RegulationInputs, now: float) -> RegulationConfig:
         e = self.entry
-        target_temp, target_humidity, drying = self._active_targets()
+        target_temp, target_humidity, drying = self._active_targets(now)
         cool_on = float(conf.get(e, conf.CONF_COOL_MIN_ON, conf.DEFAULT_COOL_MIN_ON))
         cool_off = float(conf.get(e, conf.CONF_COOL_MIN_OFF, conf.DEFAULT_COOL_MIN_OFF))
         other_on = float(conf.get(e, conf.CONF_ACTUATOR_MIN_ON, conf.DEFAULT_ACTUATOR_MIN_ON))
@@ -475,6 +479,13 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             * 60.0,
             case_hardening_rate=float(
                 conf.get(e, conf.CONF_CASE_HARDENING_RATE, conf.DEFAULT_CASE_HARDENING_RATE)
+            ),
+            condensation_margin=float(
+                conf.get(
+                    e,
+                    conf.CONF_CONDENSATION_MARGIN,
+                    conf.condensation_margin_default({**e.data, **e.options}),
+                )
             ),
             high_temp_drying_limit=float(
                 conf.get(e, conf.CONF_HIGH_TEMP_DRYING_LIMIT, conf.DEFAULT_HIGH_TEMP_DRYING_LIMIT)
@@ -632,6 +643,18 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for actuator, on in outputs.commands.items():
             if on:
                 counters[actuator.value] = counters.get(actuator.value, 0.0) + interval / 3600.0
+        # Hours spent in degraded mode: at least one alert asks for a manual
+        # action because no configured actuator can correct the drift.
+        if self.manual_action_required:
+            counters[COUNTER_DEGRADED] = counters.get(COUNTER_DEGRADED, 0.0) + interval / 3600.0
+
+    @property
+    def manual_action_required(self) -> bool:
+        """True while an active alert carries a recommended manual action."""
+        return any(
+            details.get("manual_action") not in (None, ManualAction.NONE.value)
+            for details in self._alert_details.values()
+        )
 
     def _persist_program(self) -> None:
         self.store.set_program_state(
@@ -647,10 +670,19 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     # -- Public control API (used by services / entities) --------------------
 
+    @property
+    def chamber_kind(self) -> str:
+        """The chamber kind (``charcuterie`` or ``cheese``)."""
+        return conf.chamber_kind(self.entry)
+
     def available_programs(self) -> list[Program]:
-        """Return built-in presets plus user-defined programs."""
+        """Return the presets of this chamber's kind plus all user programs."""
         user = [Program.from_dict(p) for p in self.store.programs.values()]
-        return list(PRESETS) + user
+        return presets_for(ProgramCategory(self.chamber_kind)) + user
+
+    def user_programs(self) -> list[Program]:
+        """Return the user-defined programs (the exportable ones)."""
+        return [Program.from_dict(p) for p in self.store.programs.values()]
 
     def find_program(self, program_id: str) -> Program | None:
         preset = preset_by_id(program_id)
@@ -722,6 +754,30 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if removed:
             self.store.async_save()
         return removed
+
+    async def async_import_programs(
+        self, programs: list[Program], *, overwrite: bool = False
+    ) -> tuple[list[str], list[str]]:
+        """Store ``programs``; return (imported ids, skipped ids).
+
+        A program whose id already exists is skipped unless ``overwrite``;
+        built-in preset ids are always skipped.
+        """
+        imported: list[str] = []
+        skipped: list[str] = []
+        for program in programs:
+            if preset_by_id(program.id) is not None or (
+                program.id in self.store.programs and not overwrite
+            ):
+                skipped.append(program.id)
+                continue
+            self.store.upsert_program(
+                program.id, dataclasses.replace(program, builtin=False).to_dict()
+            )
+            imported.append(program.id)
+        if imported:
+            self.store.async_save()
+        return imported, skipped
 
     # -- Batch control API (used by services / entities) ---------------------
 
@@ -967,6 +1023,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "entry_id": prefix,
             "name": self.chamber_name,
+            "kind": self.chamber_kind,
             "updated_at": dt_util.utcnow().timestamp(),
             "temp": data.get("temp"),
             "humidity": data.get("humidity"),
@@ -990,6 +1047,9 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "phase_index": state.phase_index,
                 "phase_name": data.get("phase_name"),
                 "phase_remaining": data.get("phase_remaining"),
+                "phase_target_temp": data.get("phase_target_temp"),
+                "phase_target_humidity": data.get("phase_target_humidity"),
+                "ramp_remaining": data.get("ramp_remaining"),
                 "started_at": state.started_at,
                 "phase_started_at": state.phase_started_at,
                 "phases": [p.to_dict() for p in program.phases] if program else [],
@@ -1073,6 +1133,9 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "phase_name": (self.program.current_phase.name if self.program.current_phase else None),
             "phase_index": self.program.state.phase_index,
             "phase_remaining": self.program.phase_remaining(now),
+            "phase_target_temp": self.program.active_targets()[0],
+            "phase_target_humidity": self.program.active_targets()[1],
+            "ramp_remaining": self.program.ramp_remaining(now),
             "active_alerts": sorted(self._active_alerts),
             "alert_details": dict(self._alert_details),
             "counters": dict(self.store.counters),

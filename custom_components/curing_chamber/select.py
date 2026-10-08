@@ -36,7 +36,13 @@ class ProgramSelect(CuringChamberEntity, SelectEntity):
 
     @property
     def options(self) -> list[str]:
-        return [_NONE] + [program.id for program in self.coordinator.available_programs()]
+        options = [_NONE] + [program.id for program in self.coordinator.available_programs()]
+        # A preset of the other chamber kind may run when started by id (service,
+        # automation): keep it selectable so the current option stays valid.
+        current = self.current_option
+        if current not in options:
+            options.append(current)
+        return options
 
     @property
     def current_option(self) -> str:

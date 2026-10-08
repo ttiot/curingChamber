@@ -20,7 +20,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .batch import BatchStatus
 from .const import DOMAIN, SIGNAL_CHAMBERS_CHANGED
 from .program.presets import preset_by_id
-from .program.schema import ProgramValidationError, validate_program
+from .program.schema import ProgramValidationError, validate_import, validate_program
 
 if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection
@@ -354,6 +354,34 @@ async def ws_program_delete(
     connection.send_result(msg["id"], {"deleted": deleted})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/program/import",
+        **_ENTRY,
+        vol.Required("programs"): vol.Any(dict, list),
+        vol.Optional("overwrite", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_program_import(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Import an export payload (or list / single program) into the chamber."""
+    if (coordinator := _coordinator(hass, connection, msg)) is None:
+        return
+    try:
+        programs, warnings = validate_import(msg["programs"], has_scale=coordinator.has_scale)
+    except ProgramValidationError as err:
+        connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, str(err))
+        return
+    imported, skipped = await coordinator.async_import_programs(
+        programs, overwrite=msg["overwrite"]
+    )
+    connection.send_result(
+        msg["id"], {"imported": imported, "skipped": skipped, "warnings": warnings}
+    )
+
+
 _COMMANDS = (
     ws_chambers,
     ws_subscribe_chambers,
@@ -371,6 +399,7 @@ _COMMANDS = (
     ws_program_validate,
     ws_program_save,
     ws_program_delete,
+    ws_program_import,
 )
 
 

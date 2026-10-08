@@ -8,6 +8,11 @@ DOMAIN: Final = "curing_chamber"
 
 # --- Config entry / data keys ------------------------------------------------
 CONF_NAME: Final = "name"
+CONF_CHAMBER_KIND: Final = "chamber_kind"
+CHAMBER_KIND_CHARCUTERIE: Final = "charcuterie"
+CHAMBER_KIND_CHEESE: Final = "cheese"
+CHAMBER_KINDS: Final = (CHAMBER_KIND_CHARCUTERIE, CHAMBER_KIND_CHEESE)
+DEFAULT_CHAMBER_KIND: Final = CHAMBER_KIND_CHARCUTERIE
 
 # Sensors (sources) -----------------------------------------------------------
 CONF_TEMP_SENSOR: Final = "temp_sensor"
@@ -59,6 +64,7 @@ CONF_FAN_RUN: Final = "fan_run"
 CONF_VENT_PERIOD: Final = "vent_period"
 CONF_VENT_RUN: Final = "vent_run"
 CONF_CO2_THRESHOLD: Final = "co2_threshold"
+CONF_CONDENSATION_MARGIN: Final = "condensation_margin"
 CONF_MANUAL_OVERRIDE_RESPECT: Final = "manual_override_respect_minutes"
 CONF_TICK_INTERVAL: Final = "tick_interval"
 
@@ -94,6 +100,12 @@ DEFAULT_CO2_THRESHOLD: Final = 1500  # ppm
 DEFAULT_MANUAL_OVERRIDE_RESPECT: Final = 0  # minutes (0 = reprendre le contrôle)
 DEFAULT_TICK_INTERVAL: Final = 30  # seconds
 DEFAULT_CONDENSATION_MARGIN: Final = 1.0  # degC
+# A cheese cave runs at 85-95 %RH, where the dew point sits well under 1 degC
+# below the air temperature: a tighter margin keeps the alert meaningful.
+DEFAULT_CONDENSATION_MARGIN_CHEESE: Final = 0.5  # degC
+
+# --- Counters (hours, persisted in the store next to the actuator run times) --
+COUNTER_DEGRADED: Final = "degraded"
 
 # --- Runtime data / hass.data keys ------------------------------------------
 DATA_COORDINATOR: Final = "coordinator"
@@ -122,6 +134,8 @@ SERVICE_SET_REFERENCE_WEIGHT: Final = "set_reference_weight"
 SERVICE_ACKNOWLEDGE_ALERT: Final = "acknowledge_alert"
 SERVICE_CREATE_PROGRAM: Final = "create_program"
 SERVICE_DELETE_PROGRAM: Final = "delete_program"
+SERVICE_EXPORT_PROGRAMS: Final = "export_programs"
+SERVICE_IMPORT_PROGRAMS: Final = "import_programs"
 SERVICE_CREATE_BATCH: Final = "create_batch"
 SERVICE_RECORD_WEIGHT: Final = "record_weight"
 SERVICE_SET_REFERENCE_BATCH: Final = "set_reference_batch"

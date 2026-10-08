@@ -6,12 +6,13 @@ end conditions and program resume-after-restart are unit-testable in isolation.
 """
 
 from .engine import ProgramEngine
-from .presets import PRESETS, preset_by_id
+from .presets import PRESETS, preset_by_id, presets_for
 from .types import (
     EndKind,
     OnComplete,
     Phase,
     Program,
+    ProgramCategory,
     ProgramEvent,
     ProgramEventType,
     ProgramState,
@@ -24,10 +25,12 @@ __all__ = [
     "OnComplete",
     "Phase",
     "Program",
+    "ProgramCategory",
     "ProgramEngine",
     "ProgramEvent",
     "ProgramEventType",
     "ProgramState",
     "ProgramStatus",
     "preset_by_id",
+    "presets_for",
 ]
