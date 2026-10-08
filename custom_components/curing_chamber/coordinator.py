@@ -1287,6 +1287,15 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "sample_count": len(batch.samples),
             "event_count": len(batch.events),
             "last_weigh_in": latest.timestamp if latest else None,
+            "last_event": (
+                {
+                    "timestamp": batch.events[-1].timestamp,
+                    "kind": batch.events[-1].kind,
+                    "note": batch.events[-1].note,
+                }
+                if batch.events
+                else None
+            ),
             "last_photo_url": next(
                 (s.photo_url for s in reversed(batch.samples) if s.photo_url), None
             ),

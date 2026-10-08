@@ -392,6 +392,11 @@ async def test_batch_journal_and_export(
     assert msg["success"], msg
     assert msg["result"]["event_count"] == 2
     assert [e["kind"] for e in msg["result"]["events"]] == ["salting", "turned"]
+    assert msg["result"]["last_event"]["kind"] == "turned"
+    # The light summary (card attribute) carries the last entry too.
+    light = hass.states.get("sensor.test_chamber_active_batches").attributes["batches"][0]
+    assert light["last_event"]["kind"] == "turned"
+    assert "events" not in light
 
     msg = await _call(client, "weigh_in", entry_id=entry_id, batch_id=batch_id, weight=950.0)
     assert msg["success"], msg

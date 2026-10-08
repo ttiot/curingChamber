@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Journal on the Lovelace card.** Batch summaries carry `last_event`
+  (kind, timestamp, note); the card shows the last journal entry per batch
+  and a one-tap **Turned** button recording it.
 - **Batch import.** `export_batch` (service and `batch/export` websocket)
   takes `include_photos` to embed the weigh-in photos as `photo_data`; the new
   `import_batch` service and `batch/import` websocket recreate a batch from
