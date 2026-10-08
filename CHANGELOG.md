@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Automation blueprints** in `blueprints/automation/curing_chamber/`:
+  phase / program notifications, cut power on sensor fault, care and weigh-in
+  reminder forwarding. Import URLs are listed in the README.
 - **Richer batch comparison.** A batch's detail shows the chamber
   temperature / humidity recorded over its life under the drying curve, and
   the History table gains *Mean T°* and *Mean RH* columns computed from the

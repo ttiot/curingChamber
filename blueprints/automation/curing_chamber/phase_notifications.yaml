@@ -1,0 +1,56 @@
+blueprint:
+  name: Curing Chamber — phase and program notifications
+  description: >-
+    Send a notification when a curing program changes phase or completes.
+    Works with the `curing_chamber_event` bus events, so it needs no entity.
+  domain: automation
+  source_url: https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/phase_notifications.yaml
+  input:
+    notify_service:
+      name: Notify service
+      description: The notify service to call, e.g. `notify.mobile_app_my_phone`.
+      selector:
+        text:
+    entry_id:
+      name: Chamber entry id (optional)
+      description: >-
+        Leave empty to react to every chamber. Otherwise the `entry_id` of the
+        chamber (shown as the device identifier, in the panel's websocket
+        messages and in the `entry_id` attribute of the *Active batches*
+        sensor).
+      default: ""
+      selector:
+        text:
+
+mode: queued
+max: 10
+
+variables:
+  entry_filter: !input entry_id
+
+trigger:
+  - platform: event
+    event_type: curing_chamber_event
+    event_data:
+      type: phase_changed
+    id: phase
+  - platform: event
+    event_type: curing_chamber_event
+    event_data:
+      type: program_completed
+    id: completed
+
+condition:
+  - condition: template
+    value_template: "{{ not entry_filter or trigger.event.data.entry_id == entry_filter }}"
+
+action:
+  - service: !input notify_service
+    data:
+      title: Curing chamber
+      message: >-
+        {% if trigger.id == 'phase' %}
+          Phase {{ trigger.event.data.index + 1 }} started: {{ trigger.event.data.phase }}.
+        {% else %}
+          Program complete: {{ trigger.event.data.program }}.
+        {% endif %}

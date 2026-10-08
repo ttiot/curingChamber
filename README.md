@@ -435,6 +435,23 @@ or on the `binary_sensor.*_manual_action_required` state.
 
 ---
 
+## Automation blueprints
+
+Three blueprints ship in the repository (`blueprints/automation/curing_chamber/`).
+Import each one from *Settings → Automations & scenes → Blueprints → Import
+blueprint* with its URL:
+
+| Blueprint | What it does | Import URL |
+|---|---|---|
+| Phase and program notifications | Notifies on `phase_changed` / `program_completed` bus events | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/phase_notifications.yaml` |
+| Cut power on sensor fault | Switches off extra devices (a plug feeding the fridge…) when *Sensor fault* turns on, optional notification | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/sensor_fault_cutoff.yaml` |
+| Care and weigh-in reminders | Forwards the `reminder` and `weigh_in_due` events to a notify service | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/care_and_weigh_in_reminders.yaml` |
+
+Each takes a notify service (e.g. `notify.mobile_app_my_phone`) and, where
+relevant, an optional chamber `entry_id` filter for multi-chamber setups.
+
+---
+
 ## FAQ / troubleshooting
 
 - **The cooling switch never turns on.** Check: the chamber has a temperature
@@ -807,6 +824,22 @@ formulaire intégré poids + photo pour saisir une pesée depuis votre télépho
 type: custom:curing-chamber-card
 entity: sensor.curing_chamber_active_batches
 ```
+
+## Blueprints d'automatisation
+
+Trois blueprints sont fournis dans le dépôt
+(`blueprints/automation/curing_chamber/`). Importez-les depuis *Paramètres →
+Automatisations et scènes → Blueprints → Importer un blueprint* avec leur URL :
+
+| Blueprint | Rôle | URL d'import |
+|---|---|---|
+| Notifications de phase et de programme | Notifie sur les événements `phase_changed` / `program_completed` | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/phase_notifications.yaml` |
+| Coupure sur défaut capteur | Éteint des appareils supplémentaires (prise alimentant le frigo…) quand *Défaut capteur* passe à ON, notification optionnelle | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/sensor_fault_cutoff.yaml` |
+| Rappels d'entretien et de pesée | Relaie les événements `reminder` et `weigh_in_due` vers un service de notification | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/care_and_weigh_in_reminders.yaml` |
+
+Chacun prend un service de notification (ex. `notify.mobile_app_mon_tel`) et,
+selon le cas, un filtre `entry_id` optionnel pour les installations
+multi-chambres.
 
 ## FAQ / dépannage
 
