@@ -71,6 +71,11 @@ async def test_chambers_and_state(
     assert state["program"]["phases"] == []
     assert state["kind"] == "charcuterie"
     assert state["program"]["ramp_remaining"] is None
+    assert state["sources"] == {
+        "temp": "sensor.chamber_temp",
+        "humidity": "sensor.chamber_humidity",
+        "core": None,
+    }
     assert state["batches"] == []
     assert state["entities"]["manual_weight"] == MANUAL_WEIGHT
     assert state["entities"]["regulation_switch"] == "switch.test_chamber_regulation"

@@ -1447,6 +1447,11 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "reference_batch_id": data.get("reference_batch_id"),
             "active_batch_count": data.get("active_batch_count", 0),
             "batches": data.get("batches") or [],
+            "sources": {
+                "temp": conf.get(self.entry, conf.CONF_TEMP_SENSOR),
+                "humidity": conf.get(self.entry, conf.CONF_HUMIDITY_SENSOR),
+                "core": conf.get(self.entry, conf.CONF_PRODUCT_TEMP_SENSOR),
+            },
             "entities": {
                 "regulation_switch": entity_id("switch", "switch_regulation"),
                 "maintenance_switch": entity_id("switch", "switch_maintenance"),

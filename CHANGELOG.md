@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Ambient history in the panel.** The Chamber view gets a *Temperature &
+  humidity history* card (24 h / 7 d / 30 d) drawn from the recorder history
+  of the source sensors (and the core probe), with the current targets as
+  dashed lines. Websocket `state` carries the source entity ids in `sources`.
 - **Automatic housekeeping.** New *Batches & housekeeping* options step:
   *auto-archive completed batches after N days* and *delete photos of
   archived batches after N days* (both 0 = off by default), applied hourly.

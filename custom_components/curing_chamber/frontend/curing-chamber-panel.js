@@ -130,6 +130,12 @@ const STR = {
     no_entries: "No journal entry yet.",
     core_temp: "Core",
     core_delta: "core − air",
+    ambient_history: "Temperature & humidity history",
+    range_24h: "24 h",
+    range_7d: "7 d",
+    range_30d: "30 d",
+    range_batch: "batch",
+    no_history_data: "No recorded history for this period.",
     reminders: "Care reminders",
     add_reminder: "Add reminder",
     every_hours: "every (h)",
@@ -326,6 +332,12 @@ const STR = {
     no_entries: "Aucune entrée pour l'instant.",
     core_temp: "À cœur",
     core_delta: "cœur − air",
+    ambient_history: "Historique température & hygrométrie",
+    range_24h: "24 h",
+    range_7d: "7 j",
+    range_30d: "30 j",
+    range_batch: "lot",
+    no_history_data: "Aucun historique enregistré sur cette période.",
     reminders: "Rappels d'entretien",
     add_reminder: "Ajouter un rappel",
     every_hours: "toutes les (h)",
@@ -737,6 +749,12 @@ const STYLES = `
   .chart .pt { fill: var(--primary-color); }
   .chart .target { stroke: var(--error-color, #db4437); stroke-dasharray: 5 4; stroke-width: 1.5; }
   .chart .proj { fill: none; stroke: var(--primary-color); stroke-dasharray: 4 4; stroke-width: 1.5; opacity: .7; }
+  .chart .line-temp { fill: none; stroke: var(--error-color, #db4437); stroke-width: 1.5; }
+  .chart .line-hum { fill: none; stroke: var(--info-color, #039be5); stroke-width: 1.5; }
+  .chart .line-core { fill: none; stroke: var(--warning-color, #ffa600); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .chart .target-temp { stroke: var(--error-color, #db4437); stroke-dasharray: 5 4; stroke-width: 1; opacity: .6; }
+  .chart .target-hum { stroke: var(--info-color, #039be5); stroke-dasharray: 5 4; stroke-width: 1; opacity: .6; }
+  .range button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: .85em; }
   .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .msg { padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-size: .9em; }
@@ -783,6 +801,8 @@ class CuringChamberPanel extends HTMLElement {
     this._entryId = lsGet(LS_CHAMBER);
     this._tab = TABS.includes(lsGet(LS_TAB)) ? lsGet(LS_TAB) : "chamber";
     this._state = null;
+    this._historyRange = lsGet("cc-history-range") || "24h";
+    this._historyCache = {};
     this._programs = [];
     this._batches = [];
     this._showArchived = false;
@@ -1263,6 +1283,9 @@ class CuringChamberPanel extends HTMLElement {
     ]);
     grid.appendChild(gaugeCard);
 
+    // Ambient history ----------------------------------------------------------
+    grid.appendChild(this._ambientHistoryCard(st));
+
     // Actuators + weight --------------------------------------------------------
     const actuators = st.actuators || {};
     const chips = h("div", { class: "chips" });
@@ -1378,6 +1401,150 @@ class CuringChamberPanel extends HTMLElement {
   }
 
   /** SVG arc gauge from -120° to +120°. */
+  // -- Recorder history (temperature / humidity / core) ------------------------
+
+  /** Fetch recorder history for the source sensors between two timestamps (s). */
+  async _fetchHistory(start, end, sources) {
+    const ids = Object.values(sources).filter(Boolean);
+    if (!ids.length || !this._hass) return {};
+    const key = `${ids.join(",")}|${Math.floor(start / 60)}|${Math.floor(end / 60)}`;
+    const cached = this._historyCache[key];
+    if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.data;
+    const raw = await this._hass.callWS({
+      type: "history/history_during_period",
+      start_time: new Date(start * 1000).toISOString(),
+      end_time: new Date(end * 1000).toISOString(),
+      entity_ids: ids,
+      minimal_response: true,
+      no_attributes: true,
+      significant_changes_only: false,
+    });
+    const data = {};
+    for (const [name, id] of Object.entries(sources)) {
+      if (!id) continue;
+      const pts = [];
+      for (const item of raw[id] || []) {
+        const value = parseFloat(item.s != null ? item.s : item.state);
+        const ts = item.lu != null ? Number(item.lu) : Date.parse(item.last_updated) / 1000;
+        if (!Number.isNaN(value) && !Number.isNaN(ts)) pts.push({ t: ts, v: value });
+      }
+      data[name] = pts;
+    }
+    Object.keys(this._historyCache).forEach((k) => { if (Date.now() - this._historyCache[k].at > 30 * 60 * 1000) delete this._historyCache[k]; });
+    this._historyCache[key] = { at: Date.now(), data };
+    return data;
+  }
+
+  /** Mean of a history series (time-weighted step function). */
+  _historyMean(pts, start, end) {
+    if (!pts || !pts.length) return null;
+    let area = 0;
+    let span = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const t0 = Math.max(start, pts[i].t);
+      const t1 = Math.min(end, i + 1 < pts.length ? pts[i + 1].t : end);
+      if (t1 <= t0) continue;
+      area += pts[i].v * (t1 - t0);
+      span += t1 - t0;
+    }
+    return span > 0 ? area / span : pts[pts.length - 1].v;
+  }
+
+  /** Dual-axis time chart: temperature (left) and humidity (right). */
+  _historyChart(data, start, end, opts = {}) {
+    const t = (k) => this._t(k);
+    const W = 600;
+    const H = 240;
+    const padL = 36;
+    const padR = 36;
+    const padT = 10;
+    const padB = 26;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const temps = [...(data.temp || []), ...(data.core || [])].map((p) => p.v);
+    if (opts.targetTemp != null) temps.push(opts.targetTemp);
+    const hums = (data.humidity || []).map((p) => p.v);
+    if (opts.targetHumidity != null) hums.push(opts.targetHumidity);
+    const tMin = temps.length ? Math.floor(Math.min(...temps) - 1) : 0;
+    const tMax = temps.length ? Math.ceil(Math.max(...temps) + 1) : 30;
+    const hMin = hums.length ? Math.max(0, Math.floor(Math.min(...hums) / 5) * 5 - 5) : 40;
+    const hMax = hums.length ? Math.min(100, Math.ceil(Math.max(...hums) / 5) * 5 + 5) : 100;
+    const x = (ts) => padL + ((ts - start) / Math.max(1, end - start)) * plotW;
+    const yT = (v) => padT + plotH - ((v - tMin) / Math.max(1, tMax - tMin)) * plotH;
+    const yH = (v) => padT + plotH - ((v - hMin) / Math.max(1, hMax - hMin)) * plotH;
+    const svg = s("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img" });
+    const steps = 4;
+    for (let i = 0; i <= steps; i++) {
+      const yy = padT + (plotH / steps) * i;
+      svg.appendChild(s("line", { class: "grid", x1: padL, x2: W - padR, y1: yy, y2: yy }));
+      svg.appendChild(s("text", { class: "lbl", x: padL - 4, y: yy + 3, "text-anchor": "end" }, `${(tMax - ((tMax - tMin) / steps) * i).toFixed(0)}°`));
+      svg.appendChild(s("text", { class: "lbl", x: W - padR + 4, y: yy + 3 }, `${(hMax - ((hMax - hMin) / steps) * i).toFixed(0)}%`));
+    }
+    const span = end - start;
+    const ticks = 6;
+    for (let i = 0; i <= ticks; i++) {
+      const ts = start + (span / ticks) * i;
+      const d = new Date(ts * 1000);
+      const label = span <= 2 * 86400
+        ? d.toLocaleTimeString(this._locale, { hour: "2-digit", minute: "2-digit" })
+        : d.toLocaleDateString(this._locale, { day: "2-digit", month: "short" });
+      svg.appendChild(s("text", { class: "lbl", x: x(ts), y: H - padB + 14, "text-anchor": i === 0 ? "start" : i === ticks ? "end" : "middle" }, label));
+    }
+    svg.appendChild(s("line", { class: "axis", x1: padL, x2: W - padR, y1: padT + plotH, y2: padT + plotH }));
+    if (opts.targetTemp != null) svg.appendChild(s("line", { class: "target-temp", x1: padL, x2: W - padR, y1: yT(opts.targetTemp), y2: yT(opts.targetTemp) }));
+    if (opts.targetHumidity != null) svg.appendChild(s("line", { class: "target-hum", x1: padL, x2: W - padR, y1: yH(opts.targetHumidity), y2: yH(opts.targetHumidity) }));
+    const line = (pts, cls, y) => {
+      if (!pts || !pts.length) return;
+      // Step line: a recorder state holds until the next change.
+      const parts = [];
+      for (let i = 0; i < pts.length; i++) {
+        const t0 = Math.max(start, pts[i].t);
+        const t1 = i + 1 < pts.length ? pts[i + 1].t : end;
+        parts.push(`${x(t0).toFixed(1)},${y(pts[i].v).toFixed(1)}`, `${x(Math.min(end, t1)).toFixed(1)},${y(pts[i].v).toFixed(1)}`);
+      }
+      svg.appendChild(s("polyline", { class: cls, points: parts.join(" ") }));
+    };
+    line(data.humidity, "line-hum", yH);
+    line(data.temp, "line-temp", yT);
+    line(data.core, "line-core", yT);
+    const legend = h("div", { class: "legend", style: "margin-top:6px" }, [
+      data.temp && data.temp.length ? h("span", null, [h("span", { class: "sw", style: "background:var(--error-color, #db4437)" }), t("temperature")]) : null,
+      data.humidity && data.humidity.length ? h("span", null, [h("span", { class: "sw", style: "background:var(--info-color, #039be5)" }), t("humidity")]) : null,
+      data.core && data.core.length ? h("span", null, [h("span", { class: "sw", style: "background:var(--warning-color, #ffa600)" }), t("core_temp")]) : null,
+    ]);
+    return h("div", null, [svg, legend]);
+  }
+
+  /** A card that loads and draws the ambient history for [start, end]. */
+  _ambientChartBox(start, end, opts = {}) {
+    const t = (k) => this._t(k);
+    const sources = (this._state && this._state.sources) || {};
+    const box = h("div", { class: "muted small" }, t("loading"));
+    this._fetchHistory(start, end, sources).then((data) => {
+      clear(box);
+      box.className = "";
+      const any = Object.values(data).some((pts) => pts && pts.length);
+      if (!any) { box.className = "muted small"; box.textContent = t("no_history_data"); return; }
+      box.appendChild(this._historyChart(data, start, end, opts));
+    }).catch((err) => { box.textContent = `${t("error")}: ${err.message || err}`; });
+    return box;
+  }
+
+  _ambientHistoryCard(st) {
+    const t = (k) => this._t(k);
+    const ranges = { "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400 };
+    const now = Date.now() / 1000;
+    const span = ranges[this._historyRange] || ranges["24h"];
+    const buttons = h("div", { class: "row range" }, Object.keys(ranges).map((key) => h("button", {
+      class: `outline sm${key === this._historyRange ? " active" : ""}`,
+      onclick: () => { this._historyRange = key; lsSet("cc-history-range", key); this._renderTab(); },
+    }, t(`range_${key}`))));
+    return h("div", { class: "card span" }, [
+      h("h2", null, [h("span", { class: "grow" }, t("ambient_history")), buttons]),
+      this._ambientChartBox(now - span, now, { targetTemp: st.target_temp, targetHumidity: st.target_humidity }),
+    ]);
+  }
+
   _gauge(value, target, min, max, unit, label) {
     const W = 160;
     const H = 110;
