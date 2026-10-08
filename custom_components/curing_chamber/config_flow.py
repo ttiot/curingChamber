@@ -97,6 +97,16 @@ def _sensors_schema(defaults: dict[str, Any]) -> vol.Schema:
     )
 
 
+def _kind_selector() -> selector.SelectSelector:
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(conf.CHAMBER_KINDS),
+            translation_key="chamber_kind",
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
 def _actuators_schema(defaults: dict[str, Any]) -> vol.Schema:
     fields: dict[Any, Any] = {}
     for key in _ACTUATOR_KEYS:
@@ -121,9 +131,14 @@ class CuringChamberConfigFlow(ConfigFlow, domain=DOMAIN):
             self._data.update({k: v for k, v in user_input.items() if k != conf.CONF_NAME})
             return await self.async_step_actuators()
 
-        schema = vol.Schema({vol.Required(conf.CONF_NAME, default="Curing Chamber"): str}).extend(
-            _sensors_schema({}).schema
-        )
+        schema = vol.Schema(
+            {
+                vol.Required(conf.CONF_NAME, default="Curing Chamber"): str,
+                vol.Required(
+                    conf.CONF_CHAMBER_KIND, default=conf.DEFAULT_CHAMBER_KIND
+                ): _kind_selector(),
+            }
+        ).extend(_sensors_schema({}).schema)
         return self.async_show_form(step_id="user", data_schema=schema)
 
     async def async_step_actuators(
@@ -243,6 +258,10 @@ class CuringChamberOptionsFlow(OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Required(
+                    conf.CONF_CHAMBER_KIND,
+                    default=m.get(conf.CONF_CHAMBER_KIND, conf.DEFAULT_CHAMBER_KIND),
+                ): _kind_selector(),
                 vol.Optional(
                     conf.CONF_TEMP_DEADBAND,
                     default=default(conf.CONF_TEMP_DEADBAND, conf.DEFAULT_TEMP_DEADBAND),
@@ -291,6 +310,12 @@ class CuringChamberOptionsFlow(OptionsFlow):
                     conf.CONF_HUMIDITY_ABS_MAX,
                     default=default(conf.CONF_HUMIDITY_ABS_MAX, conf.DEFAULT_HUMIDITY_ABS_MAX),
                 ): _number(0, 100, 1, "%"),
+                vol.Optional(
+                    conf.CONF_CONDENSATION_MARGIN,
+                    default=default(
+                        conf.CONF_CONDENSATION_MARGIN, conf.condensation_margin_default(m)
+                    ),
+                ): _number(0.1, 5, 0.1, "°C"),
                 vol.Optional(
                     conf.CONF_DEGRADED_DELAY,
                     default=default(conf.CONF_DEGRADED_DELAY, conf.DEFAULT_DEGRADED_DELAY),

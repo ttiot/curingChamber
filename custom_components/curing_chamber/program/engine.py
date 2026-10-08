@@ -57,12 +57,25 @@ class ProgramEngine:
             return None
         return self.program.phases[self.state.phase_index]
 
-    def active_targets(self) -> tuple[float | None, float | None]:
-        """Return (target_temp, target_humidity) of the active phase, if any."""
+    def active_targets(self, now: float | None = None) -> tuple[float | None, float | None]:
+        """Return (target_temp, target_humidity) of the active phase, if any.
+
+        With ``now`` the targets follow the phase's ramp (if it has one);
+        without it the phase's final targets are returned.
+        """
         phase = self.current_phase
         if phase is None:
             return (None, None)
-        return (phase.target_temp, phase.target_humidity)
+        if now is None or not phase.has_ramp:
+            return (phase.target_temp, phase.target_humidity)
+        return phase.targets_at(self.elapsed_in_phase(now))
+
+    def ramp_remaining(self, now: float) -> float | None:
+        """Seconds left in the active phase's ramp, ``None`` without a ramp."""
+        phase = self.current_phase
+        if phase is None:
+            return None
+        return phase.ramp_remaining(self.elapsed_in_phase(now))
 
     def elapsed_in_phase(self, now: float) -> float:
         """Return seconds spent in the current phase, excluding paused time."""

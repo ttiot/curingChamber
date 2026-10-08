@@ -3,24 +3,71 @@
 from __future__ import annotations
 
 import pytest
-from custom_components.curing_chamber.program import PRESETS, preset_by_id
+from custom_components.curing_chamber.program import PRESETS, preset_by_id, presets_for
 from custom_components.curing_chamber.program.schema import (
     ProgramValidationError,
     validate_program,
 )
-from custom_components.curing_chamber.program.types import EndKind
+from custom_components.curing_chamber.program.types import EndKind, Program, ProgramCategory
+
+CHARCUTERIE_IDS = {
+    "saucisson_sec",
+    "coppa",
+    "bresaola",
+    "pancetta",
+    "lonzo",
+    "chorizo",
+    "lomo",
+    "viande_des_grisons",
+    "jambon_cru",
+    "cellar_hold",
+}
+CHEESE_IDS = {
+    "cheese_bloomy",
+    "cheese_washed",
+    "cheese_pressed",
+    "cheese_blue",
+    "cheese_lactic",
+    "cheese_cave_hold",
+}
 
 
 def test_all_presets_have_expected_ids() -> None:
     ids = {p.id for p in PRESETS}
-    assert ids == {
-        "saucisson_sec",
-        "coppa",
-        "bresaola",
-        "pancetta",
-        "lonzo",
-        "cellar_hold",
-    }
+    assert ids == CHARCUTERIE_IDS | CHEESE_IDS
+    assert len(ids) == len(PRESETS)
+
+
+def test_presets_are_split_by_category() -> None:
+    assert {p.id for p in presets_for(ProgramCategory.CHARCUTERIE)} == CHARCUTERIE_IDS
+    assert {p.id for p in presets_for(ProgramCategory.CHEESE)} == CHEESE_IDS
+    assert all(p.builtin for p in PRESETS)
+
+
+def test_chorizo_drying_ramps_down_from_the_rest_targets() -> None:
+    chorizo = preset_by_id("chorizo")
+    assert chorizo is not None
+    rest, drying = chorizo.phases
+    assert drying.has_ramp
+    assert (drying.start_temp, drying.start_humidity) == (rest.target_temp, rest.target_humidity)
+    assert drying.ramp_hours == 48.0
+    assert drying.targets_at(0.0) == (22.0, 85.0)
+    assert drying.targets_at(48 * 3600.0) == (13.0, 75.0)
+
+
+def test_cheese_presets_end_on_duration_and_hold() -> None:
+    for preset in presets_for(ProgramCategory.CHEESE):
+        assert preset.category is ProgramCategory.CHEESE
+        assert all(p.end_kind is not EndKind.WEIGHT_LOSS for p in preset.phases)
+        assert preset.on_complete.value == "hold_last"
+        # No phase is called "drying": the high-temperature drying alert is a
+        # charcuterie rule and must not fire on a cheese surface-drying step.
+        assert all(p.name != "drying" for p in preset.phases)
+
+
+def test_preset_serialisation_round_trip() -> None:
+    for preset in PRESETS:
+        assert Program.from_dict(preset.to_dict()) == preset
 
 
 def test_saucisson_values() -> None:

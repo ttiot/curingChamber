@@ -5,10 +5,21 @@ from __future__ import annotations
 import base64
 import os
 
+import pytest
 from custom_components.curing_chamber.const import (
+    CHAMBER_KIND_CHEESE,
+    CONF_CHAMBER_KIND,
+    CONF_DEGRADED_DELAY,
+    CONF_HUMIDITY_SENSOR,
+    CONF_NAME,
+    CONF_STARTUP_DELAY,
+    CONF_TEMP_SENSOR,
     DOMAIN,
     SERVICE_CREATE_BATCH,
     SERVICE_DELETE_BATCH,
+    SERVICE_EXPORT_PROGRAMS,
+    SERVICE_IMPORT_PROGRAMS,
+    SERVICE_NEXT_PHASE,
     SERVICE_RECORD_WEIGHT,
     SERVICE_SET_REFERENCE_BATCH,
     SERVICE_SET_TARGETS,
@@ -19,6 +30,10 @@ from custom_components.curing_chamber.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from .conftest import HUMIDITY_ENTITY, TEMP_ENTITY
 
 
 async def _setup(hass, config_entry, seed_states):
@@ -151,3 +166,200 @@ async def test_delete_batch(hass: HomeAssistant, config_entry, seed_states) -> N
     await hass.async_block_till_done()
     assert batch_id not in coordinator.batches
     assert coordinator.store.reference_batch_id is None
+
+
+_PROGRAM = {
+    "id": "my_chorizo",
+    "name": "My chorizo",
+    "phases": [
+        {"name": "rest", "target_temp": 22, "target_humidity": 85, "duration_hours": 48},
+        {
+            "name": "drying",
+            "target_temp": 13,
+            "target_humidity": 75,
+            "end_kind": "weight_loss",
+            "weight_loss_pct": 35,
+            "duration_hours": 800,
+            "start_temp": 22,
+            "start_humidity": 85,
+            "ramp_hours": 48,
+        },
+    ],
+}
+
+
+async def test_export_and_import_programs(hass: HomeAssistant, config_entry, seed_states) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+
+    empty = await hass.services.async_call(
+        DOMAIN, SERVICE_EXPORT_PROGRAMS, {}, blocking=True, return_response=True
+    )
+    assert empty == {"format": "curing_chamber/programs", "version": 1, "programs": []}
+
+    result = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_IMPORT_PROGRAMS,
+        {"programs": [_PROGRAM]},
+        blocking=True,
+        return_response=True,
+    )
+    assert result == {"imported": ["my_chorizo"], "skipped": []}
+    assert "my_chorizo" in coordinator.store.programs
+
+    exported = await hass.services.async_call(
+        DOMAIN, SERVICE_EXPORT_PROGRAMS, {}, blocking=True, return_response=True
+    )
+    assert exported["format"] == "curing_chamber/programs"
+    assert [p["id"] for p in exported["programs"]] == ["my_chorizo"]
+    assert exported["programs"][0]["phases"][1]["ramp_hours"] == 48.0
+    assert exported["programs"][0]["builtin"] is False
+
+    # Re-importing the export skips the existing id unless overwrite is set.
+    result = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_IMPORT_PROGRAMS,
+        {"programs": exported},
+        blocking=True,
+        return_response=True,
+    )
+    assert result == {"imported": [], "skipped": ["my_chorizo"]}
+    renamed = {**exported, "programs": [{**exported["programs"][0], "name": "Renamed"}]}
+    result = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_IMPORT_PROGRAMS,
+        {"programs": renamed, "overwrite": True},
+        blocking=True,
+        return_response=True,
+    )
+    assert result == {"imported": ["my_chorizo"], "skipped": []}
+    assert coordinator.store.programs["my_chorizo"]["name"] == "Renamed"
+
+    # Built-in preset ids are never overwritten.
+    result = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_IMPORT_PROGRAMS,
+        {"programs": {**_PROGRAM, "id": "coppa"}, "overwrite": True},
+        blocking=True,
+        return_response=True,
+    )
+    assert result == {"imported": [], "skipped": ["coppa"]}
+
+
+async def test_import_programs_rejects_invalid_payload(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    await _setup(hass, config_entry, seed_states)
+    with pytest.raises(HomeAssistantError, match="Invalid programs"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_IMPORT_PROGRAMS,
+            {"programs": [{"id": "bad", "name": "Bad", "phases": []}]},
+            blocking=True,
+            return_response=True,
+        )
+
+
+async def test_ramp_drives_the_regulation_targets(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    await hass.services.async_call(
+        DOMAIN, SERVICE_IMPORT_PROGRAMS, {"programs": [_PROGRAM]}, blocking=True
+    )
+    await hass.services.async_call(
+        DOMAIN, SERVICE_START_PROGRAM, {"program_id": "my_chorizo"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert coordinator.data["target_temp"] == 22.0
+    assert coordinator.data["ramp_remaining"] is None
+
+    # Jump into the drying phase: the targets start where the rest phase ended.
+    await hass.services.async_call(DOMAIN, SERVICE_NEXT_PHASE, {}, blocking=True)
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()  # the service refresh is debounced
+    assert coordinator.data["phase_name"] == "drying"
+    assert coordinator.data["target_temp"] == pytest.approx(22.0, abs=0.01)
+    assert coordinator.data["target_humidity"] == pytest.approx(85.0, abs=0.01)
+    assert coordinator.data["phase_target_temp"] == 13.0
+    assert coordinator.data["ramp_remaining"] == pytest.approx(48 * 3600.0, abs=5)
+
+    # Half-way through the ramp the targets sit half-way too.
+    coordinator.program.state.phase_started_at -= 24 * 3600.0
+    await coordinator.async_refresh()
+    assert coordinator.data["target_temp"] == pytest.approx(17.5, abs=0.01)
+    assert coordinator.data["target_humidity"] == pytest.approx(80.0, abs=0.01)
+    state = hass.states.get("sensor.test_chamber_phase_time_remaining")
+    assert state is not None
+    assert state.attributes["phase_target_temp"] == 13.0
+    assert state.attributes["ramp_remaining_hours"] == pytest.approx(24.0, abs=0.01)
+
+
+async def test_cheese_chamber_lists_cheese_presets_only(hass: HomeAssistant, seed_states) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Cave",
+        data={
+            CONF_NAME: "Cave",
+            CONF_CHAMBER_KIND: CHAMBER_KIND_CHEESE,
+            CONF_TEMP_SENSOR: TEMP_ENTITY,
+            CONF_HUMIDITY_SENSOR: HUMIDITY_ENTITY,
+        },
+    )
+    coordinator = await _setup(hass, entry, seed_states)
+    ids = {p.id for p in coordinator.available_programs()}
+    assert "cheese_washed" in ids
+    assert "saucisson_sec" not in ids
+    assert coordinator.chamber_kind == "cheese"
+    assert coordinator.chamber_state()["kind"] == "cheese"
+    # The tighter cheese condensation margin applies by default.
+    assert coordinator.data["config"].condensation_margin == 0.5
+
+    select = hass.states.get("select.cave_program")
+    assert select is not None
+    assert "cheese_pressed" in select.attributes["options"]
+    assert "coppa" not in select.attributes["options"]
+    # Starting a preset of the other kind is still possible by id (automations).
+    await hass.services.async_call(
+        DOMAIN, SERVICE_START_PROGRAM, {"program_id": "cheese_pressed"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert coordinator.data["phase_name"] == "surface_drying"
+    await hass.services.async_call(
+        DOMAIN, SERVICE_START_PROGRAM, {"program_id": "coppa"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()  # the service refresh is debounced
+    select = hass.states.get("select.cave_program")
+    assert select is not None
+    assert select.state == "coppa"
+    assert "coppa" in select.attributes["options"]
+
+
+async def test_degraded_hours_counter(hass: HomeAssistant, seed_states) -> None:
+    """A chamber with no actuator at all is in degraded mode as soon as it drifts."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bare",
+        data={
+            CONF_NAME: "Bare",
+            CONF_TEMP_SENSOR: TEMP_ENTITY,
+            CONF_HUMIDITY_SENSOR: HUMIDITY_ENTITY,
+        },
+        options={CONF_DEGRADED_DELAY: 0, CONF_STARTUP_DELAY: 0},
+    )
+    coordinator = await _setup(hass, entry, seed_states)
+    state = hass.states.get("sensor.bare_degraded_mode_hours")
+    assert state is not None
+    assert float(state.state) == 0.0
+
+    await hass.services.async_call(
+        DOMAIN, SERVICE_SET_TARGETS, {"temperature": 5.0, "humidity": 75.0}, blocking=True
+    )
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.manual_action_required
+    state = hass.states.get("sensor.bare_degraded_mode_hours")
+    assert state is not None
+    assert float(state.state) > 0.0
+    assert state.attributes["state_class"] == "total_increasing"

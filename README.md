@@ -37,8 +37,14 @@ diagnostics, and full FR/EN translations.
 - **Safety first:** an unavailable or frozen sensor stops every actuator and
   raises a critical alert — the chamber never regulates blind. Absolute limits
   cut the aggravating actuator.
-- **Multi-phase programs** with 6 built-in presets, phase end on duration,
-  weight loss (with a scale) or manual.
+- **Multi-phase programs** with 16 built-in presets (charcuterie and cheese),
+  phase end on duration, weight loss (with a scale) or manual, and optional
+  **setpoint ramps** (targets glide from the previous values to the phase
+  targets over N hours, e.g. from fermentation to drying).
+- **Chamber kind:** charcuterie drying chamber or **cheese ripening cave** —
+  each kind gets its own presets and a suitable condensation margin.
+- **Program import/export** as JSON (panel buttons and services) to share
+  recipes between chambers or installations.
 - **Product batches** with **manual weigh-ins** (no scale required, optional
   note + photo), per-batch drying curve and a **predicted completion date (ETA)**;
   the reference batch drives the program's weight-loss phase.
@@ -70,7 +76,8 @@ Manual install: copy `custom_components/curing_chamber/` into your HA
 
 The config flow has four screens:
 
-1. **Sensors** — name the chamber and pick the temperature and humidity
+1. **Sensors** — name the chamber, choose its **kind** (charcuterie drying
+   chamber or cheese ripening cave) and pick the temperature and humidity
    sensors. Optional: a second temperature/humidity probe (averaged, with a
    divergence alert), product core temperature, a weight sensor, a CO₂ sensor,
    and a door binary sensor.
@@ -83,8 +90,9 @@ The config flow has four screens:
 4. **Food-safety disclaimer** — read and submit to finish.
 
 Everything is reconfigurable afterwards via *Configure* (options flow):
-**Sensors**, **Actuators**, **Regulation & safety** (deadbands, compressor
-timers, absolute limits, degraded-mode delays…) and **Notifications**.
+**Sensors**, **Actuators**, **Regulation & safety** (chamber kind, deadbands,
+compressor timers, absolute limits, condensation margin, degraded-mode delays…)
+and **Notifications**.
 
 ---
 
@@ -96,13 +104,14 @@ timers, absolute limits, degraded-mode delays…) and **Notifications**.
 | `humidifier` | Humidity | Setpoint + action humidifying/drying/idle |
 | `select` | Program | Active preset/program (`none` stops it) |
 | `sensor` | Current phase | Running phase name (+ program status, index) |
-| `sensor` | Phase time remaining | Estimated hours left (duration phases) |
+| `sensor` | Phase time remaining | Estimated hours left (duration phases); final phase targets and ramp time left in attributes |
 | `sensor` | Dew point | Magnus dew point (°C) |
 | `sensor` | Absolute humidity | g/m³ |
 | `sensor` | Weight loss | % vs reference weight |
 | `sensor` | Drying rate | %/day |
 | `sensor` | Regulation state | idle/cooling/…, with last decisions in attributes |
 | `sensor` | *Actuator* run time | Cumulative run-hours per actuator (maintenance) |
+| `sensor` | Degraded mode hours | Cumulative hours with a manual action required (`total_increasing`, long-term statistics) |
 | `binary_sensor` | Manual action required | ON with recommended action(s) in attributes |
 | `binary_sensor` | Out-of-range alarm | Absolute limit / high-temp breach |
 | `binary_sensor` | Sensor fault | Sensor unavailable or frozen |
@@ -143,7 +152,10 @@ Every decision (value, band, action, reason, blocking timer) is logged at
 
 Built-in, **indicative** starting points — duplicate and adapt to your recipes.
 Weight-loss phases carry an approximate max duration (also the fallback when no
-scale is configured).
+scale is configured). A chamber only lists the presets of its kind; any preset
+can still be started by id from an automation.
+
+**Charcuterie** (chamber kind *charcuterie*):
 
 | Preset | Phase 1 (rest) | Phase 2 (drying) | End |
 |---|---|---|---|
@@ -152,7 +164,23 @@ scale is configured).
 | Bresaola | 20 °C / 75 %RH, 24 h | 13 °C / 72 %RH | −35 % or ~6 weeks |
 | Pancetta roulée | 22 °C / 80 %RH, 24 h | 13 °C / 75 %RH | −30 % or ~4 weeks |
 | Lonzo / dried tenderloin | — | 13 °C / 75 %RH | −35 % or ~4 weeks |
+| Chorizo | 22 °C / 85 %RH, 48 h | ramp to 13 °C / 75 %RH over 48 h | −35 % or ~5 weeks |
+| Lomo embuchado | 20 °C / 80 %RH, 24 h | ramp to 12 °C / 75 %RH over 24 h | −35 % or ~6 weeks |
+| Viande des Grisons | 18 °C / 75 %RH, 24 h | 12 °C / 72 %RH | −40 % or ~8 weeks |
+| Jambon cru (after salting) | — | 14 °C / 72 %RH | −32 % or ~26 weeks |
 | Cellar hold | — | 12 °C / 78 %RH | manual |
+
+**Cheese** (chamber kind *cheese*). Ripening ends on tasting, so these end on
+an indicative duration and then hold their targets:
+
+| Preset | Phase 1 (surface drying) | Phase 2 (ripening) | Indicative duration |
+|---|---|---|---|
+| Bloomy rind (camembert, brie) | 16 °C / 85 %RH, 24 h | 12 °C / 92 %RH | ~3 weeks |
+| Washed rind (munster, reblochon) | 16 °C / 85 %RH, 24 h | 13 °C / 95 %RH | ~5 weeks |
+| Pressed (tomme, cantal) | 16 °C / 80 %RH, 48 h | ramp to 12 °C / 88 %RH over 48 h | ~10 weeks |
+| Blue (bleu, fourme) | — | 9 °C / 95 %RH | ~8 weeks |
+| Lactic / goat | 18 °C / 75 %RH, 48 h | 11 °C / 85 %RH | ~2 weeks |
+| Cheese cave hold | — | 11 °C / 90 %RH | manual |
 
 ---
 
@@ -162,7 +190,11 @@ Create/update a program with the `curing_chamber.create_program` service. A
 program is an ordered list of phases; each phase regulates temperature,
 humidity, or both, and ends on `duration`, `weight_loss` or `manual`. A
 `weight_loss` phase should also carry `duration_hours` as a safety cap /
-no-scale fallback.
+no-scale fallback. A phase may **ramp**: with `ramp_hours`, the targets move
+linearly from `start_temp` / `start_humidity` (each optional) to `target_temp` /
+`target_humidity` over the first `ramp_hours` hours of the phase, then hold.
+Paused time freezes the ramp. The optional `category` (`charcuterie`, the
+default, or `cheese`) only tags the program.
 
 ```yaml
 service: curing_chamber.create_program
@@ -180,6 +212,9 @@ data:
       - name: drying
         target_temp: 13
         target_humidity: 75
+        start_temp: 22         # optional ramp: 22 → 13 °C and 80 → 75 %
+        start_humidity: 80     # over the first 48 h of the phase
+        ramp_hours: 48
         end_kind: weight_loss
         weight_loss_pct: 35
         duration_hours: 1344   # ~8 weeks safety cap
@@ -190,6 +225,25 @@ Then start it: `curing_chamber.start_program` with `program_id: my_coppa`.
 Other services: `stop_program`, `pause_program`, `resume_program`, `next_phase`,
 `set_targets`, `set_reference_weight`, `acknowledge_alert`, `delete_program`.
 When several chambers exist, target one with the `device_id` field.
+
+**Import / export.** `curing_chamber.export_programs` returns the chamber's
+user programs as a portable payload (`{"format": "curing_chamber/programs",
+"version": 1, "programs": [...]}`); `curing_chamber.import_programs` takes that
+payload, a list of programs or a single program, skips ids that already exist
+unless `overwrite: true`, and never touches built-in presets. The panel offers
+the same as **Export** / **Import** buttons working on `.json` files.
+
+```yaml
+# Copy the programs of one chamber into another (script sequence)
+- service: curing_chamber.export_programs
+  data:
+    device_id: abc123
+  response_variable: programs
+- service: curing_chamber.import_programs
+  data:
+    device_id: def456
+    programs: "{{ programs }}"
+```
 
 ---
 
@@ -262,8 +316,9 @@ active theme. Four views:
    photo gallery, a weigh-in form with direct camera capture (photos are
    downscaled in the browser), create / reference / complete / archive / delete.
 3. **Programs** — visual editor for multi-phase programs: duplicate a preset,
-   edit phases (targets, end condition, duration, weight loss), live
-   validation, save, delete, start.
+   edit phases (targets, optional ramp, end condition, duration, weight loss),
+   category, live validation, save, delete, start, and **export / import** of
+   programs as JSON files. Presets are those of the chamber kind.
 4. **History** — overlay the drying curves of finished batches and compare
    their final loss, duration and mean drying rate to tune your recipes.
 
@@ -385,8 +440,9 @@ The control logic lives in three **pure** packages (`regulation/`, `program/`,
 ≥ 85 % without Home Assistant. CI runs ruff, mypy, pytest+coverage, hassfest and
 HACS validation on Python 3.13.
 
-Roadmap: PID control, and an exponential (rather than linear) drying-curve
-model for a sharper ETA near the end of curing.
+Roadmap: PID control, an exponential (rather than linear) drying-curve model
+for a sharper ETA near the end of curing, and the use of the product core
+temperature probe.
 
 ---
 ---
@@ -426,8 +482,14 @@ d'action manuelle en mode dégradé, diagnostics, traductions FR/EN complètes.
 - **Sécurité d'abord** : capteur indisponible ou figé → tous les actionneurs
   coupés + alerte critique. On ne régule jamais à l'aveugle. Les limites
   absolues coupent l'actionneur aggravant.
-- **Programmes multi-phases** avec 6 presets ; fin de phase sur durée, perte de
-  poids (avec balance) ou manuelle.
+- **Programmes multi-phases** avec 16 presets (charcuterie et fromage) ; fin de
+  phase sur durée, perte de poids (avec balance) ou manuelle, et **rampes de
+  consignes** optionnelles (les consignes glissent des valeurs précédentes aux
+  consignes de la phase sur N heures, par ex. de l'étuvage au séchage).
+- **Type de chambre** : séchoir à charcuterie ou **cave d'affinage à
+  fromages** — chaque type a ses presets et une marge de condensation adaptée.
+- **Import / export des programmes** en JSON (boutons du panneau et services)
+  pour partager ses recettes entre chambres ou installations.
 - **Lots de produits** avec **pesées manuelles** (sans balance, note + photo
   optionnelles), courbe de séchage par lot et **date de fin estimée (ETA)** ; le
   lot de référence pilote la phase de perte de poids du programme.
@@ -454,7 +516,8 @@ dossier `config/custom_components/` de HA et redémarrez.
 
 Le config flow comporte quatre écrans :
 
-1. **Capteurs** — nommez la chambre et choisissez les sondes de température et
+1. **Capteurs** — nommez la chambre, choisissez son **type** (séchoir à
+   charcuterie ou cave d'affinage à fromages) et les sondes de température et
    d'hygrométrie. Optionnel : seconde sonde T°/HR (moyennée, avec alerte de
    divergence), température à cœur, capteur de poids, capteur CO₂, capteur
    d'ouverture de porte. *L'intégration s'installe même sans capteur.*
@@ -466,8 +529,9 @@ Le config flow comporte quatre écrans :
 4. **Avertissement sécurité alimentaire** — lisez et validez pour terminer.
 
 Tout est reconfigurable ensuite via *Configurer* (options) : **Capteurs**,
-**Actionneurs**, **Régulation & sécurité** (bandes mortes, temporisations
-compresseur, limites absolues, délais mode dégradé…), **Notifications**.
+**Actionneurs**, **Régulation & sécurité** (type de chambre, bandes mortes,
+temporisations compresseur, limites absolues, marge de condensation, délais mode
+dégradé…), **Notifications**.
 
 ## Entités
 
@@ -477,13 +541,14 @@ compresseur, limites absolues, délais mode dégradé…), **Notifications**.
 | `humidifier` | Hygrométrie | Consigne + action humidification/séchage/ralenti |
 | `select` | Programme | Programme/preset actif (`none` = arrêt) |
 | `sensor` | Phase courante | Nom de la phase (+ statut, index) |
-| `sensor` | Temps restant de phase | Heures estimées (phases de durée) |
+| `sensor` | Temps restant de phase | Heures estimées (phases de durée) ; consignes finales de la phase et temps de rampe restant en attributs |
 | `sensor` | Point de rosée | °C (Magnus) |
 | `sensor` | Humidité absolue | g/m³ |
 | `sensor` | Perte de poids | % vs poids de référence |
 | `sensor` | Vitesse de séchage | %/jour |
 | `sensor` | État de régulation | ralenti/froid/…, dernières décisions en attributs |
 | `sensor` | Temps de fonct. *actionneur* | Heures cumulées par actionneur (maintenance) |
+| `sensor` | Heures en mode dégradé | Heures cumulées avec action manuelle requise (`total_increasing`, statistiques long terme) |
 | `binary_sensor` | Action manuelle requise | ON, action(s) recommandée(s) en attributs |
 | `binary_sensor` | Alarme hors-plage | Limite absolue / T° trop haute |
 | `binary_sensor` | Défaut capteur | Capteur indisponible ou figé |
@@ -520,7 +585,10 @@ exposée dans les attributs du capteur *État de régulation*.
 
 Points de départ **indicatifs** — à dupliquer et adapter à vos recettes. Les
 phases en perte de poids portent une durée max approximative (aussi le repli
-sans balance).
+sans balance). Une chambre ne liste que les presets de son type ; tout preset
+reste démarrable par son id depuis une automatisation.
+
+**Charcuterie** (type *charcuterie*) :
 
 | Preset | Phase 1 (étuvage) | Phase 2 (séchage) | Fin |
 |---|---|---|---|
@@ -529,17 +597,45 @@ sans balance).
 | Bresaola | 20 °C / 75 %HR, 24 h | 13 °C / 72 %HR | −35 % ou ~6 semaines |
 | Pancetta roulée | 22 °C / 80 %HR, 24 h | 13 °C / 75 %HR | −30 % ou ~4 semaines |
 | Lonzo / filet mignon séché | — | 13 °C / 75 %HR | −35 % ou ~4 semaines |
+| Chorizo | 22 °C / 85 %HR, 48 h | rampe vers 13 °C / 75 %HR sur 48 h | −35 % ou ~5 semaines |
+| Lomo embuchado | 20 °C / 80 %HR, 24 h | rampe vers 12 °C / 75 %HR sur 24 h | −35 % ou ~6 semaines |
+| Viande des Grisons | 18 °C / 75 %HR, 24 h | 12 °C / 72 %HR | −40 % ou ~8 semaines |
+| Jambon cru (après salage) | — | 14 °C / 72 %HR | −32 % ou ~26 semaines |
 | Maintien cave d'affinage | — | 12 °C / 78 %HR | manuelle |
+
+**Fromage** (type *fromage*). L'affinage se juge à la dégustation : ces presets
+se terminent sur une durée indicative puis maintiennent leurs consignes :
+
+| Preset | Phase 1 (ressuyage) | Phase 2 (affinage) | Durée indicative |
+|---|---|---|---|
+| Croûte fleurie (camembert, brie) | 16 °C / 85 %HR, 24 h | 12 °C / 92 %HR | ~3 semaines |
+| Croûte lavée (munster, reblochon) | 16 °C / 85 %HR, 24 h | 13 °C / 95 %HR | ~5 semaines |
+| Pâte pressée (tomme, cantal) | 16 °C / 80 %HR, 48 h | rampe vers 12 °C / 88 %HR sur 48 h | ~10 semaines |
+| Pâte persillée (bleu, fourme) | — | 9 °C / 95 %HR | ~8 semaines |
+| Pâte lactique / chèvre | 18 °C / 75 %HR, 48 h | 11 °C / 85 %HR | ~2 semaines |
+| Maintien cave à fromages | — | 11 °C / 90 %HR | manuelle |
 
 ## Programmes utilisateur (JSON)
 
 Créez/modifiez un programme avec le service `curing_chamber.create_program` (même
 format que ci-dessus, section anglaise). Une phase en `weight_loss` doit aussi
-porter `duration_hours` (plafond de sécurité / repli sans balance). Démarrez avec
+porter `duration_hours` (plafond de sécurité / repli sans balance). Une phase
+peut porter une **rampe** : avec `ramp_hours`, les consignes passent
+linéairement de `start_temp` / `start_humidity` (chacune optionnelle) à
+`target_temp` / `target_humidity` sur les premières `ramp_hours` heures de la
+phase, puis se maintiennent ; une pause fige la rampe. Démarrez avec
 `curing_chamber.start_program` (`program_id`). Autres services : `stop_program`,
 `pause_program`, `resume_program`, `next_phase`, `set_targets`,
 `set_reference_weight`, `acknowledge_alert`, `delete_program`. Avec plusieurs
 chambres, ciblez-en une via le champ `device_id`.
+
+**Import / export.** `curing_chamber.export_programs` renvoie les programmes
+utilisateur de la chambre dans un format portable (`{"format":
+"curing_chamber/programs", "version": 1, "programs": [...]}`) ;
+`curing_chamber.import_programs` accepte ce format, une liste ou un programme
+seul, ignore les ids déjà présents sauf `overwrite: true`, et ne touche jamais
+aux presets intégrés. Le panneau propose la même chose avec les boutons
+**Exporter** / **Importer** sur des fichiers `.json`.
 
 ## Lots & pesées manuelles
 
@@ -616,8 +712,10 @@ vues :
    sont réduites dans le navigateur), créer / référence / terminer / archiver /
    supprimer.
 3. **Programmes** — éditeur visuel de programmes multi-phases : dupliquer un
-   preset, éditer les phases (consignes, condition de fin, durée, perte de
-   poids), validation en direct, enregistrer, supprimer, démarrer.
+   preset, éditer les phases (consignes, rampe optionnelle, condition de fin,
+   durée, perte de poids), catégorie, validation en direct, enregistrer,
+   supprimer, démarrer, et **export / import** des programmes en fichiers JSON.
+   Les presets listés sont ceux du type de la chambre.
 4. **Historique** — superposer les courbes de séchage des lots terminés et
    comparer perte finale, durée et vitesse moyenne pour ajuster vos recettes.
 
@@ -664,5 +762,6 @@ vit dans trois paquets **purs** (`regulation/`, `program/`, `batch/`) sans impor
 Assistant. La CI exécute ruff, mypy, pytest+couverture, hassfest et la
 validation HACS sous Python 3.13.
 
-Roadmap : régulation PID, et un modèle de courbe de séchage exponentiel (plutôt
+Roadmap : régulation PID, exploitation de la sonde de température à cœur, et un
+modèle de courbe de séchage exponentiel (plutôt
 que linéaire) pour affiner l'ETA en fin d'affinage.

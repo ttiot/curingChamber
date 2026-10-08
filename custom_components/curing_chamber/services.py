@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+    callback,
+)
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -21,6 +27,8 @@ from .const import (
     SERVICE_CREATE_PROGRAM,
     SERVICE_DELETE_BATCH,
     SERVICE_DELETE_PROGRAM,
+    SERVICE_EXPORT_PROGRAMS,
+    SERVICE_IMPORT_PROGRAMS,
     SERVICE_NEXT_PHASE,
     SERVICE_PAUSE_PROGRAM,
     SERVICE_RECORD_WEIGHT,
@@ -31,7 +39,12 @@ from .const import (
     SERVICE_START_PROGRAM,
     SERVICE_STOP_PROGRAM,
 )
-from .program.schema import ProgramValidationError, validate_program
+from .program.schema import (
+    ProgramValidationError,
+    export_payload,
+    validate_import,
+    validate_program,
+)
 
 if TYPE_CHECKING:
     from .coordinator import CuringChamberCoordinator
@@ -51,6 +64,8 @@ _ATTR_SET_AS_REFERENCE = "set_as_reference"
 _ATTR_TIMESTAMP = "timestamp"
 _ATTR_NOTE = "note"
 _ATTR_PHOTO = "photo"
+_ATTR_PROGRAMS = "programs"
+_ATTR_OVERWRITE = "overwrite"
 
 _TARGET = {vol.Optional(_ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string])}
 
@@ -65,6 +80,13 @@ _TARGETS_SCHEMA = vol.Schema(
 )
 _WEIGHT_SCHEMA = vol.Schema({**_TARGET, vol.Optional(_ATTR_WEIGHT): vol.Coerce(float)})
 _CREATE_SCHEMA = vol.Schema({**_TARGET, vol.Required(_ATTR_PROGRAM): dict})
+_IMPORT_SCHEMA = vol.Schema(
+    {
+        **_TARGET,
+        vol.Required(_ATTR_PROGRAMS): vol.Any(dict, list),
+        vol.Optional(_ATTR_OVERWRITE, default=False): cv.boolean,
+    }
+)
 _BARE_SCHEMA = vol.Schema(_TARGET)
 
 _CREATE_BATCH_SCHEMA = vol.Schema(
@@ -176,6 +198,35 @@ def async_setup_services(hass: HomeAssistant) -> None:
         for coordinator in _coordinators(hass, call):
             await coordinator.async_delete_program(call.data[_ATTR_PROGRAM_ID])
 
+    async def export_programs(call: ServiceCall) -> ServiceResponse:
+        """Return the user programs of the targeted chamber(s) as a portable payload."""
+        programs = []
+        seen: set[str] = set()
+        for coordinator in _coordinators(hass, call):
+            for program in coordinator.user_programs():
+                if program.id not in seen:
+                    seen.add(program.id)
+                    programs.append(program)
+        return export_payload(programs)
+
+    async def import_programs(call: ServiceCall) -> ServiceResponse:
+        """Import programs (export payload, list or single program) into the chamber(s)."""
+        imported: list[str] = []
+        skipped: list[str] = []
+        for coordinator in _coordinators(hass, call):
+            try:
+                programs, _warnings = validate_import(
+                    call.data[_ATTR_PROGRAMS], has_scale=coordinator.has_scale
+                )
+            except ProgramValidationError as err:
+                raise HomeAssistantError(f"Invalid programs: {err}") from err
+            done, missed = await coordinator.async_import_programs(
+                programs, overwrite=call.data[_ATTR_OVERWRITE]
+            )
+            imported.extend(done)
+            skipped.extend(missed)
+        return {"imported": imported, "skipped": skipped}
+
     async def create_batch(call: ServiceCall) -> None:
         for coordinator in _coordinators(hass, call):
             await coordinator.async_create_batch(
@@ -247,6 +298,20 @@ def async_setup_services(hass: HomeAssistant) -> None:
     )
     for name, handler, schema in services:
         hass.services.async_register(DOMAIN, name, handler, schema=schema)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_EXPORT_PROGRAMS,
+        export_programs,
+        schema=_BARE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_IMPORT_PROGRAMS,
+        import_programs,
+        schema=_IMPORT_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
 
 @callback
@@ -263,6 +328,8 @@ def async_unload_services(hass: HomeAssistant) -> None:
         SERVICE_ACKNOWLEDGE_ALERT,
         SERVICE_CREATE_PROGRAM,
         SERVICE_DELETE_PROGRAM,
+        SERVICE_EXPORT_PROGRAMS,
+        SERVICE_IMPORT_PROGRAMS,
         SERVICE_CREATE_BATCH,
         SERVICE_RECORD_WEIGHT,
         SERVICE_SET_REFERENCE_BATCH,
