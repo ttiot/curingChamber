@@ -510,6 +510,14 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 conf.get(e, conf.CONF_CASE_HARDENING_RATE, conf.DEFAULT_CASE_HARDENING_RATE)
             ),
             core_temp_max=float(conf.get(e, conf.CONF_CORE_TEMP_MAX, conf.DEFAULT_CORE_TEMP_MAX)),
+            actuator_ineffective_seconds=float(
+                conf.get(
+                    e,
+                    conf.CONF_ACTUATOR_INEFFECTIVE_MINUTES,
+                    conf.DEFAULT_ACTUATOR_INEFFECTIVE_MINUTES,
+                )
+            )
+            * 60.0,
             condensation_margin=float(
                 conf.get(
                     e,

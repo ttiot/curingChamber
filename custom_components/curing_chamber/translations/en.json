@@ -104,6 +104,7 @@
           "temp_abs_max": "Absolute maximum temperature (°C)",
           "humidity_abs_min": "Absolute minimum humidity (%RH)",
           "humidity_abs_max": "Absolute maximum humidity (%RH)",
+          "actuator_ineffective_minutes": "Ineffective-actuator detection delay (min, 0 = off)",
           "core_temp_max": "Product core maximum temperature (°C)",
           "condensation_margin": "Condensation alert margin above dew point (°C)",
           "degraded_delay": "Degraded-mode onset delay (s)",
@@ -197,6 +198,9 @@
       },
       "door_open_too_long": {
         "name": "Door open too long"
+      },
+      "actuator_ineffective": {
+        "name": "Actuator ineffective"
       }
     },
     "switch": {

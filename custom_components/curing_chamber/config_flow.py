@@ -311,6 +311,13 @@ class CuringChamberOptionsFlow(OptionsFlow):
                     default=default(conf.CONF_HUMIDITY_ABS_MAX, conf.DEFAULT_HUMIDITY_ABS_MAX),
                 ): _number(0, 100, 1, "%"),
                 vol.Optional(
+                    conf.CONF_ACTUATOR_INEFFECTIVE_MINUTES,
+                    default=default(
+                        conf.CONF_ACTUATOR_INEFFECTIVE_MINUTES,
+                        conf.DEFAULT_ACTUATOR_INEFFECTIVE_MINUTES,
+                    ),
+                ): _number(0, 1440, 5, "min"),
+                vol.Optional(
                     conf.CONF_CORE_TEMP_MAX,
                     default=default(conf.CONF_CORE_TEMP_MAX, conf.DEFAULT_CORE_TEMP_MAX),
                 ): _number(0, 60, 0.5, "°C"),

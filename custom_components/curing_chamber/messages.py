@@ -81,6 +81,31 @@ _ALERTS: dict[str, dict[str, str]] = {
         "en": "Air quality: CO₂ {value} ppm. Ventilate the chamber.",
         "fr": "Qualité d'air : CO₂ {value} ppm. Aérez la chambre.",
     },
+    "actuator_ineffective_cool": {
+        "en": "Cooling has run for {minutes} min without lowering the temperature "
+        "({start}°C → {value}°C): check the compressor, an iced evaporator or the door seal.",
+        "fr": "Le froid tourne depuis {minutes} min sans faire baisser la température "
+        "({start}°C → {value}°C) : vérifiez le compresseur, un évaporateur givré ou le joint "
+        "de porte.",
+    },
+    "actuator_ineffective_heat": {
+        "en": "Heating has run for {minutes} min without raising the temperature "
+        "({start}°C → {value}°C): check the heater.",
+        "fr": "Le chauffage tourne depuis {minutes} min sans faire monter la température "
+        "({start}°C → {value}°C) : vérifiez le chauffage.",
+    },
+    "actuator_ineffective_humidify": {
+        "en": "The humidifier has run for {minutes} min without raising the humidity "
+        "({start}%RH → {value}%RH): check its water tank.",
+        "fr": "L'humidificateur tourne depuis {minutes} min sans faire monter l'hygrométrie "
+        "({start}%HR → {value}%HR) : vérifiez son réservoir d'eau.",
+    },
+    "actuator_ineffective_dehumidify": {
+        "en": "The dehumidifier has run for {minutes} min without lowering the humidity "
+        "({start}%RH → {value}%RH): check it (full tank, blocked drain).",
+        "fr": "Le déshumidificateur tourne depuis {minutes} min sans faire baisser l'hygrométrie "
+        "({start}%HR → {value}%HR) : vérifiez-le (bac plein, évacuation bouchée).",
+    },
     "manual_temp_high": {
         "en": "Temperature {value}°C (target {target}°C): lower the fridge thermostat or move the "
         "chamber somewhere cooler.",

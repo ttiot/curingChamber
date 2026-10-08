@@ -58,6 +58,19 @@ class AlertKey(StrEnum):
     MANUAL_TEMP_LOW = "manual_temp_low"
     MANUAL_HUMIDITY_HIGH = "manual_humidity_high"
     MANUAL_HUMIDITY_LOW = "manual_humidity_low"
+    ACTUATOR_INEFFECTIVE_COOL = "actuator_ineffective_cool"
+    ACTUATOR_INEFFECTIVE_HEAT = "actuator_ineffective_heat"
+    ACTUATOR_INEFFECTIVE_HUMIDIFY = "actuator_ineffective_humidify"
+    ACTUATOR_INEFFECTIVE_DEHUMIDIFY = "actuator_ineffective_dehumidify"
+
+
+#: Alert raised when an actuator runs without effect, per actuator.
+INEFFECTIVE_ALERT: dict[Actuator, AlertKey] = {
+    Actuator.COOL: AlertKey.ACTUATOR_INEFFECTIVE_COOL,
+    Actuator.HEAT: AlertKey.ACTUATOR_INEFFECTIVE_HEAT,
+    Actuator.HUMIDIFY: AlertKey.ACTUATOR_INEFFECTIVE_HUMIDIFY,
+    Actuator.DEHUMIDIFY: AlertKey.ACTUATOR_INEFFECTIVE_DEHUMIDIFY,
+}
 
 
 class ManualAction(StrEnum):
@@ -119,6 +132,13 @@ class RegulationConfig:
     #: Product core temperature above which a critical alert is raised (after
     #: ``high_temp_drying_duration``), whatever the phase.
     core_temp_max: float = 24.0
+
+    #: An actuator running continuously for this long (seconds) without moving
+    #: its quantity by at least the matching delta is reported as ineffective
+    #: (failed compressor, iced evaporator, empty humidifier…). 0 disables.
+    actuator_ineffective_seconds: float = 3600.0
+    ineffective_temp_delta: float = 0.3
+    ineffective_humidity_delta: float = 2.0
     condensation_margin: float = 1.0
 
     fan_period: float = 1800.0

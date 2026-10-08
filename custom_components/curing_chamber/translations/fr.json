@@ -104,6 +104,7 @@
           "temp_abs_max": "Température maximale absolue (°C)",
           "humidity_abs_min": "Hygrométrie minimale absolue (%HR)",
           "humidity_abs_max": "Hygrométrie maximale absolue (%HR)",
+          "actuator_ineffective_minutes": "Délai de détection d'actionneur inefficace (min, 0 = off)",
           "core_temp_max": "Température maximale à cœur du produit (°C)",
           "condensation_margin": "Marge d'alerte condensation au-dessus du point de rosée (°C)",
           "degraded_delay": "Délai d'entrée en mode dégradé (s)",
@@ -197,6 +198,9 @@
       },
       "door_open_too_long": {
         "name": "Porte ouverte trop longtemps"
+      },
+      "actuator_ineffective": {
+        "name": "Actionneur inefficace"
       }
     },
     "switch": {

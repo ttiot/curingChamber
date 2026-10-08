@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Ineffective-actuator detection.** An actuator that runs continuously for
+  longer than the new *Ineffective-actuator detection delay* option (default
+  60 min, 0 disables) without moving its quantity by at least 0.3 °C / 2 %RH
+  raises a warning (`actuator_ineffective_<cool|heat|humidify|dehumidify>`)
+  with a targeted hint (compressor, iced evaporator, empty tank…), cleared as
+  soon as the quantity moves. New diagnostic binary sensor *Actuator
+  ineffective* listing the actuators concerned.
+
 ## [0.6.0] - 2026-10-08
 
 ### Added

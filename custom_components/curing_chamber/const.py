@@ -66,6 +66,7 @@ CONF_VENT_RUN: Final = "vent_run"
 CONF_CO2_THRESHOLD: Final = "co2_threshold"
 CONF_CONDENSATION_MARGIN: Final = "condensation_margin"
 CONF_CORE_TEMP_MAX: Final = "core_temp_max"
+CONF_ACTUATOR_INEFFECTIVE_MINUTES: Final = "actuator_ineffective_minutes"
 CONF_MANUAL_OVERRIDE_RESPECT: Final = "manual_override_respect_minutes"
 CONF_TICK_INTERVAL: Final = "tick_interval"
 
@@ -102,6 +103,7 @@ DEFAULT_MANUAL_OVERRIDE_RESPECT: Final = 0  # minutes (0 = reprendre le contrôl
 DEFAULT_TICK_INTERVAL: Final = 30  # seconds
 DEFAULT_CONDENSATION_MARGIN: Final = 1.0  # degC
 DEFAULT_CORE_TEMP_MAX: Final = 24.0  # degC, product core
+DEFAULT_ACTUATOR_INEFFECTIVE_MINUTES: Final = 60  # minutes, 0 = disabled
 # A cheese cave runs at 85-95 %RH, where the dew point sits well under 1 degC
 # below the air temperature: a tighter margin keeps the alert meaningful.
 DEFAULT_CONDENSATION_MARGIN_CHEESE: Final = 0.5  # degC

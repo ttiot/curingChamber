@@ -39,6 +39,12 @@ _ABS_KEYS = {
     "core_temp_high",
 }
 _FAULT_KEYS = {"sensor_fault_temp", "sensor_fault_humidity"}
+_INEFFECTIVE_KEYS = {
+    "actuator_ineffective_cool",
+    "actuator_ineffective_heat",
+    "actuator_ineffective_humidify",
+    "actuator_ineffective_dehumidify",
+}
 _DIVERGENCE_KEYS = {"sensor_divergence_temp", "sensor_divergence_humidity"}
 
 
@@ -90,6 +96,20 @@ BINARY_SENSORS: tuple[CuringBinaryDescription, ...] = (
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
         is_on_fn=lambda d: _any_active(d, _DIVERGENCE_KEYS),
+    ),
+    CuringBinaryDescription(
+        key="actuator_ineffective",
+        translation_key="actuator_ineffective",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        is_on_fn=lambda d: _any_active(d, _INEFFECTIVE_KEYS),
+        attrs_fn=lambda d: {
+            "actuators": [
+                k.removeprefix("actuator_ineffective_")
+                for k in d.get("active_alerts", [])
+                if k in _INEFFECTIVE_KEYS
+            ]
+        },
     ),
     CuringBinaryDescription(
         key="door_open_too_long",
