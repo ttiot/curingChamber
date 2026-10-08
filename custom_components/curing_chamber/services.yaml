@@ -176,7 +176,9 @@ import_programs:
           integration: curing_chamber
     programs:
       name: Programs
-      description: Export payload (`{"programs": [...]}`), list or single program.
+      description: >-
+        Export payload (`{"programs": [...]}`), a list of programs or a single
+        program.
       required: true
       example: '{"format": "curing_chamber/programs", "version": 1, "programs": [...]}'
       selector:
