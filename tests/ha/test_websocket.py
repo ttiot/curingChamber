@@ -424,3 +424,65 @@ async def test_batch_journal_and_export(
     assert coordinator.program.status.value == "completed"
     msg = await _call(client, "batch/export", entry_id=entry_id, batch_id="nope")
     assert not msg["success"]
+
+
+async def test_batch_export_with_photos_and_import(
+    hass: HomeAssistant, hass_ws_client, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    client = await hass_ws_client(hass)
+    entry_id = config_entry.entry_id
+    created = await _create_batch(client, entry_id, name="Lonzo #1", program_id="lonzo")
+    batch_id = created["id"]
+    msg = await _call(
+        client,
+        "weigh_in",
+        entry_id=entry_id,
+        batch_id=batch_id,
+        weight=950.0,
+        photo=PHOTO,
+        note="day 3",
+    )
+    assert msg["success"], msg
+    msg = await _call(client, "batch/event/add", entry_id=entry_id, batch_id=batch_id, kind="hung")
+    assert msg["success"], msg
+
+    msg = await _call(
+        client, "batch/export", entry_id=entry_id, batch_id=batch_id, include_photos=True
+    )
+    assert msg["success"], msg
+    export = msg["result"]
+    sample = export["batch"]["samples"][0]
+    assert sample["photo_data"].startswith("data:image/jpeg;base64,")
+    assert base64.b64decode(sample["photo_data"].split(",", 1)[1]) == b"\xff\xd8\xff\xd9"
+    msg = await _call(client, "batch/export", entry_id=entry_id, batch_id=batch_id)
+    assert "photo_data" not in msg["result"]["batch"]["samples"][0]
+
+    # Import the record: same id taken → a fresh id, photo restored from photo_data.
+    msg = await _call(client, "batch/import", entry_id=entry_id, batch=export)
+    assert msg["success"], msg
+    copy = msg["result"]
+    assert copy["id"] != batch_id
+    assert copy["name"] == "Lonzo #1"
+    assert copy["program_id"] == "lonzo"
+    assert copy["sample_count"] == 1
+    assert copy["event_count"] == 1
+    assert copy["samples"][0]["note"] == "day 3"
+    assert copy["samples"][0]["photo_url"].startswith(
+        f"/api/{DOMAIN}/photo/{entry_id}/{copy['id']}/"
+    )
+    assert os.path.isfile(
+        coordinator.photo_path(copy["id"], copy["samples"][0]["photo_url"].rsplit("/", 1)[-1])
+    )
+    assert copy["loss_pct"] == 5.0
+
+    # Overwrite replaces the batch with that id in place.
+    renamed = {**export, "batch": {**export["batch"], "name": "Renamed"}}
+    msg = await _call(client, "batch/import", entry_id=entry_id, batch=renamed, overwrite=True)
+    assert msg["success"], msg
+    assert msg["result"]["id"] == batch_id
+    assert coordinator.batches[batch_id].name == "Renamed"
+
+    msg = await _call(client, "batch/import", entry_id=entry_id, batch={"batch": {"samples": "x"}})
+    assert not msg["success"]
+    assert msg["error"]["code"] == "invalid_format"

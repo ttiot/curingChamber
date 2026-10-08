@@ -307,7 +307,7 @@ export_batch:
   description: >-
     Return the full record of a batch (weigh-ins, journal, derived figures and
     the program used) as a JSON payload (returns a response; use
-    `response_variable`).
+    `response_variable`). Feed it to `import_batch` to move the batch.
   fields:
     device_id:
       name: Chamber
@@ -319,6 +319,37 @@ export_batch:
       required: true
       selector:
         text:
+    include_photos:
+      name: Include photos
+      description: Embed the weigh-in photos (base64) so the record is self-contained.
+      default: false
+      selector:
+        boolean:
+
+import_batch:
+  name: Import batch
+  description: >-
+    Create a batch from an `export_batch` payload (weigh-ins, journal and
+    embedded photos restored). An existing id gets a fresh one unless
+    `overwrite` is set.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch:
+      name: Batch
+      description: The `export_batch` payload (or its `batch` object alone).
+      required: true
+      selector:
+        object:
+    overwrite:
+      name: Overwrite
+      description: Replace a batch that already has the same id.
+      default: false
+      selector:
+        boolean:
 
 record_weight:
   name: Record weigh-in

@@ -154,6 +154,7 @@ SERVICE_DELETE_BATCH: Final = "delete_batch"
 SERVICE_ADD_BATCH_EVENT: Final = "add_batch_event"
 SERVICE_DELETE_BATCH_EVENT: Final = "delete_batch_event"
 SERVICE_EXPORT_BATCH: Final = "export_batch"
+SERVICE_IMPORT_BATCH: Final = "import_batch"
 
 # --- Batch photos ------------------------------------------------------------
 # Legacy (pre-panel) location: <config>/www/<PHOTO_WWW_SUBDIR>/<batch_id>/ served

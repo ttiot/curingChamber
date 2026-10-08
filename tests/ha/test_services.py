@@ -25,6 +25,7 @@ from custom_components.curing_chamber.const import (
     SERVICE_DELETE_BATCH_EVENT,
     SERVICE_EXPORT_BATCH,
     SERVICE_EXPORT_PROGRAMS,
+    SERVICE_IMPORT_BATCH,
     SERVICE_IMPORT_PROGRAMS,
     SERVICE_NEXT_PHASE,
     SERVICE_RECORD_WEIGHT,
@@ -568,3 +569,36 @@ async def test_program_reminder_notifies_and_fires_event(
     assert f"{DOMAIN}_{config_entry.entry_id}_reminder_0" in hass.data["persistent_notification"]
     await coordinator.async_refresh()
     assert len(events) == 2
+
+
+async def test_import_batch_service(hass: HomeAssistant, config_entry, seed_states) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    payload = {
+        "format": "curing_chamber/batch",
+        "version": 1,
+        "batch": {
+            "id": "moved",
+            "name": "Moved coppa",
+            "reference_weight": 1000.0,
+            "target_loss_pct": 30.0,
+            "status": "completed",
+            "samples": [
+                {"timestamp": 1000.0, "weight": 1000.0},
+                {"timestamp": 2000.0, "weight": 700.0},
+            ],
+            "events": [{"timestamp": 1500.0, "kind": "turned"}],
+        },
+    }
+    result = await hass.services.async_call(
+        DOMAIN, SERVICE_IMPORT_BATCH, {"batch": payload}, blocking=True, return_response=True
+    )
+    assert result == {"imported": ["moved"]}
+    batch = coordinator.batches["moved"]
+    assert batch.status.value == "completed"
+    assert len(batch.samples) == 2 and len(batch.events) == 1
+    # A completed batch does not become the reference.
+    assert coordinator.store.reference_batch_id is None
+    with pytest.raises(HomeAssistantError, match="Invalid batch"):
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_BATCH, {"batch": {"batch": {"id": "x"}}}, blocking=True
+        )

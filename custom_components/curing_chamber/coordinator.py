@@ -90,6 +90,20 @@ _ACTUATOR_CONF = {
 }
 
 
+BATCH_EXPORT_FORMAT = "curing_chamber/batch"
+
+
+def _opt_text(value: object) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _opt_number(value: object) -> float | None:
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 def _photo_bytes(photo: str) -> bytes | None:
     """Decode a weigh-in photo supplied as a data URL, base64 or a local path."""
     if not photo:
@@ -1017,7 +1031,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now = dt_util.utcnow().timestamp()
         program = self.find_program(batch.program_id) if batch.program_id else None
         return {
-            "format": "curing_chamber/batch",
+            "format": BATCH_EXPORT_FORMAT,
             "version": 1,
             "exported_at": now,
             "chamber": self.chamber_name,
@@ -1025,6 +1039,97 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "summary": self._batch_summary(batch, now),
             "program": program.to_dict() if program else None,
         }
+
+    async def async_export_batch(
+        self, batch_id: str, *, include_photos: bool = False
+    ) -> dict[str, Any]:
+        """Like :meth:`export_batch`; with ``include_photos`` the weigh-in photos
+        are embedded as ``photo_data`` data URLs so the record is self-contained."""
+        payload = self.export_batch(batch_id)
+        if not include_photos:
+            return payload
+        samples = payload["batch"]["samples"]
+
+        def _read_all() -> list[str | None]:
+            out: list[str | None] = []
+            for sample in samples:
+                url = sample.get("photo_url")
+                prefix = f"{PHOTO_URL_BASE}/{self.entry.entry_id}/{batch_id}/"
+                if not url or not url.startswith(prefix):
+                    out.append(None)
+                    continue
+                filename = url.rsplit("/", 1)[-1]
+                if not _SAFE_NAME.fullmatch(filename):
+                    out.append(None)
+                    continue
+                try:
+                    with open(self.photo_path(batch_id, filename), "rb") as handle:
+                        data = base64.b64encode(handle.read()).decode()
+                except OSError:
+                    out.append(None)
+                    continue
+                out.append(f"data:image/jpeg;base64,{data}")
+            return out
+
+        embedded = await self.hass.async_add_executor_job(_read_all)
+        for sample, data in zip(samples, embedded, strict=True):
+            if data is not None:
+                sample["photo_data"] = data
+        return payload
+
+    async def async_import_batch(
+        self, payload: dict[str, Any], *, overwrite: bool = False
+    ) -> Batch:
+        """Create a batch from an export payload (or a bare batch object).
+
+        Weigh-ins, journal and embedded photos (``photo_data``) are restored;
+        foreign ``photo_url`` values are dropped. An existing id gets a fresh
+        one unless ``overwrite``. Raises ``ValueError`` on an invalid payload.
+        """
+        raw = payload.get("batch") if isinstance(payload.get("batch"), dict) else payload
+        if not isinstance(raw, dict) or not str(raw.get("name") or "").strip():
+            raise ValueError("batch payload needs a name")
+        samples_raw = raw.get("samples") or []
+        events_raw = raw.get("events") or []
+        if not isinstance(samples_raw, list) or not isinstance(events_raw, list):
+            raise ValueError("'samples' and 'events' must be lists")
+        try:
+            samples = [WeightSample.from_dict({**s, "photo_url": None}) for s in samples_raw]
+            events = [BatchEvent.from_dict(e) for e in events_raw]
+            status = BatchStatus(str(raw.get("status") or "active"))
+        except (TypeError, ValueError, AttributeError) as err:
+            raise ValueError(f"invalid batch payload: {err}") from err
+        requested = slugify(str(raw.get("id") or "")) or None
+        if requested and requested in self.batches and overwrite:
+            await self.async_delete_batch(requested)
+        batch_id = (
+            requested
+            if requested and requested not in self.batches
+            else self._new_batch_id(str(raw["name"]))
+        )
+        batch = Batch(
+            id=batch_id,
+            name=str(raw["name"]).strip(),
+            product=_opt_text(raw.get("product")),
+            program_id=_opt_text(raw.get("program_id")),
+            reference_weight=_opt_number(raw.get("reference_weight")),
+            target_loss_pct=_opt_number(raw.get("target_loss_pct")),
+            created_at=_opt_number(raw.get("created_at")) or dt_util.utcnow().timestamp(),
+            status=status,
+        )
+        for sample, source in zip(samples, samples_raw, strict=True):
+            photo = source.get("photo_data") if isinstance(source, dict) else None
+            url = await self._save_photo(batch_id, sample.timestamp, photo) if photo else None
+            batch.add_sample(dataclasses.replace(sample, photo_url=url))
+        for event in events:
+            batch.add_event(event)
+        self.batches[batch_id] = batch
+        if self.store.reference_batch_id is None and status is BatchStatus.ACTIVE:
+            self.store.set_reference_batch(batch_id)
+        self._last_weight = None
+        self._persist_batches()
+        await self.async_refresh()
+        return batch
 
     async def async_record_weight(
         self,

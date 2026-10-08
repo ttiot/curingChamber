@@ -122,6 +122,8 @@ const STR = {
     kind_other: "Other",
     confirm_delete_event: "Delete this journal entry?",
     export_json: "Export JSON",
+    import_batch: "Import a batch",
+    batch_imported: "Batch imported.",
     export_csv: "Export CSV",
     eta_model_exponential: "exponential model",
     eta_model_linear: "linear model",
@@ -316,6 +318,8 @@ const STR = {
     kind_other: "Autre",
     confirm_delete_event: "Supprimer cette entrée du journal ?",
     export_json: "Exporter JSON",
+    import_batch: "Importer un lot",
+    batch_imported: "Lot importé.",
     export_csv: "Exporter CSV",
     eta_model_exponential: "modèle exponentiel",
     eta_model_linear: "modèle linéaire",
@@ -1503,7 +1507,10 @@ class CuringChamberPanel extends HTMLElement {
     const archivedToggle = h("input", { type: "checkbox", checked: this._showArchived, onchange: (ev) => { this._showArchived = ev.target.checked; this._renderTab(); } });
     wrap.appendChild(h("div", { class: "row between", style: "margin-bottom:12px" }, [
       h("label", { class: "inline" }, [archivedToggle, t("show_archived")]),
-      h("button", { onclick: () => { this._newBatch = true; this._renderTab(); } }, `+ ${t("new_batch")}`),
+      h("div", { class: "row" }, [
+        h("button", { class: "outline sm", onclick: () => this._importBatch() }, `⇧ ${t("import_batch")}`),
+        h("button", { onclick: () => { this._newBatch = true; this._renderTab(); } }, `+ ${t("new_batch")}`),
+      ]),
     ]));
     const list = this._batches.filter((b) => this._showArchived || b.status !== "archived");
     if (!list.length) {
@@ -1722,12 +1729,36 @@ class CuringChamberPanel extends HTMLElement {
     return card;
   }
 
+  /** Pick an export_batch JSON file and create the batch here (photos included). */
+  async _importBatch() {
+    const t = (k) => this._t(k);
+    let data;
+    try {
+      data = await pickJsonFile();
+    } catch (err) {
+      this._showToast(t("import_invalid"), true);
+      return;
+    }
+    if (data == null) return;
+    const batch = data && data.batch && typeof data.batch === "object" ? data : data && data.name ? { batch: data } : null;
+    if (!batch) { this._showToast(t("import_invalid"), true); return; }
+    try {
+      const created = await this._ws("curing_chamber/batch/import", { batch: batch.batch });
+      this._showToast(t("batch_imported"));
+      await this._loadBatches();
+      this._detailBatchId = created.id;
+      this._renderTab();
+    } catch (err) {
+      this._showError(err);
+    }
+  }
+
   /** Download one batch as JSON (full record) or CSV (weigh-ins and journal, one timeline). */
   async _exportBatch(b, format) {
     const t = (k) => this._t(k);
     let data;
     try {
-      data = await this._ws("curing_chamber/batch/export", { batch_id: b.id });
+      data = await this._ws("curing_chamber/batch/export", { batch_id: b.id, include_photos: format === "json" });
     } catch (err) {
       this._showError(err);
       return;

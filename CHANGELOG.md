@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Batch import.** `export_batch` (service and `batch/export` websocket)
+  takes `include_photos` to embed the weigh-in photos as `photo_data`; the new
+  `import_batch` service and `batch/import` websocket recreate a batch from
+  that record (weigh-ins, journal, photos), with a fresh id unless
+  `overwrite`. The panel's **Export JSON** now embeds the photos and the
+  batch list gets an **Import a batch** button.
 - **Program care reminders.** A program may carry `reminders`
   (`kind`, `every_hours`, optional `note` and `phases`): while it runs, a
   notification suggests that journal entry at the given interval (wall clock,
