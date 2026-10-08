@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Automatic housekeeping.** New *Batches & housekeeping* options step:
+  *auto-archive completed batches after N days* and *delete photos of
+  archived batches after N days* (both 0 = off by default), applied hourly.
+  Batches now record `completed_at` / `archived_at`; auto-archiving fires a
+  `batch_archived` bus event.
 - **Journal on the Lovelace card.** Batch summaries carry `last_event`
   (kind, timestamp, note); the card shows the last journal entry per batch
   and a one-tap **Turned** button recording it.

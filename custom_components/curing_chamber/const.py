@@ -36,6 +36,10 @@ CONF_VENT_SWITCH: Final = "vent_switch"
 CONF_NOTIFY_SERVICES: Final = "notify_services"
 CONF_WEIGH_IN_REMINDER_DAYS: Final = "weigh_in_reminder_days"
 DEFAULT_WEIGH_IN_REMINDER_DAYS: Final = 7  # days, 0 = off
+CONF_AUTO_ARCHIVE_DAYS: Final = "auto_archive_days"
+DEFAULT_AUTO_ARCHIVE_DAYS: Final = 0  # days after completion, 0 = off
+CONF_PURGE_PHOTOS_DAYS: Final = "purge_photos_days"
+DEFAULT_PURGE_PHOTOS_DAYS: Final = 0  # days after archiving, 0 = off
 
 # Regulation tuning -----------------------------------------------------------
 CONF_TEMP_DEADBAND: Final = "temp_deadband"
@@ -127,6 +131,7 @@ EVENT_TYPE_BATCH_COMPLETED: Final = "batch_completed"
 EVENT_TYPE_BATCH_EVENT: Final = "batch_event"
 EVENT_TYPE_WEIGH_IN_DUE: Final = "weigh_in_due"
 EVENT_TYPE_REMINDER: Final = "reminder"
+EVENT_TYPE_BATCH_ARCHIVED: Final = "batch_archived"
 
 # --- Storage -----------------------------------------------------------------
 STORAGE_VERSION: Final = 1

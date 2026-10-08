@@ -200,8 +200,33 @@ class CuringChamberOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["sensors", "actuators", "regulation", "notifications"],
+            menu_options=["sensors", "actuators", "regulation", "notifications", "batches"],
         )
+
+    async def async_step_batches(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Housekeeping of finished batches (auto-archive, photo purge)."""
+        if user_input is not None:
+            return self._save(user_input)
+        m = self._merged()
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    conf.CONF_AUTO_ARCHIVE_DAYS,
+                    default=float(
+                        m.get(conf.CONF_AUTO_ARCHIVE_DAYS, conf.DEFAULT_AUTO_ARCHIVE_DAYS)
+                    ),
+                ): _number(0, 365, 1, "d"),
+                vol.Optional(
+                    conf.CONF_PURGE_PHOTOS_DAYS,
+                    default=float(
+                        m.get(conf.CONF_PURGE_PHOTOS_DAYS, conf.DEFAULT_PURGE_PHOTOS_DAYS)
+                    ),
+                ): _number(0, 3650, 1, "d"),
+            }
+        )
+        return self.async_show_form(step_id="batches", data_schema=schema)
 
     def _merged(self) -> dict[str, Any]:
         return {**self._entry.data, **self._entry.options}

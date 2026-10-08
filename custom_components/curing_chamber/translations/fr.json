@@ -55,7 +55,8 @@
           "sensors": "Capteurs",
           "actuators": "Actionneurs",
           "regulation": "Régulation & sécurité",
-          "notifications": "Notifications"
+          "notifications": "Notifications",
+          "batches": "Lots & nettoyage"
         }
       },
       "sensors": {
@@ -114,6 +115,14 @@
           "door_open_alert_minutes": "Délai d'alerte porte ouverte (min)",
           "sensor_stale_minutes": "Délai capteur figé (min)",
           "tick_interval": "Intervalle de régulation (s)"
+        }
+      },
+      "batches": {
+        "title": "Lots & nettoyage",
+        "description": "Garder la liste des lots et le stockage des photos légers. 0 désactive chaque règle.",
+        "data": {
+          "auto_archive_days": "Archiver automatiquement les lots terminés après N jours (0 = off)",
+          "purge_photos_days": "Supprimer les photos des lots archivés après N jours (0 = off)"
         }
       }
     }

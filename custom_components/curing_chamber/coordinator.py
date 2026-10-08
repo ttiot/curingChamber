@@ -45,6 +45,7 @@ from .const import (
     EVENT_CURING_CHAMBER,
     EVENT_TYPE_ALERT_CLEARED,
     EVENT_TYPE_ALERT_RAISED,
+    EVENT_TYPE_BATCH_ARCHIVED,
     EVENT_TYPE_BATCH_COMPLETED,
     EVENT_TYPE_BATCH_EVENT,
     EVENT_TYPE_MANUAL_ACTION,
@@ -136,6 +137,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=tick),
         )
         self.regulation = RegulationEngine(start=dt_util.utcnow().timestamp())
+        self._last_housekeeping = 0.0
         self.program = ProgramEngine()
         self.store = CuringChamberStore(hass, entry.entry_id)
         self._temp_filter = SensorFilter()
@@ -282,6 +284,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._check_batch_completion(now)
         self._check_weigh_in_reminders(now)
+        await self._async_housekeeping(now)
 
         outputs = self.regulation.tick(inputs, reg_config, now)
         await self._apply_commands(outputs)
@@ -299,13 +302,55 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
             loss = batch_engine.current_loss_pct(batch)
             if loss is not None and loss >= batch.target_loss_pct:
-                batch.status = BatchStatus.COMPLETED
+                batch.set_status(BatchStatus.COMPLETED, now)
                 changed = True
                 self._fire_event(
                     EVENT_TYPE_BATCH_COMPLETED,
                     {"batch_id": batch.id, "name": batch.name, "loss_pct": round(loss, 1)},
                 )
                 self._complete_linked_program(batch, now)
+        if changed:
+            self._persist_batches()
+
+    # -- Housekeeping of finished batches --------------------------------------
+
+    def _days_option(self, key: str, default: float) -> float:
+        return max(0.0, float(conf.get(self.entry, key, default))) * 86400.0
+
+    async def _async_housekeeping(self, now: float) -> None:
+        """Archive old completed batches and purge photos of old archived ones.
+
+        Runs at most once an hour. Both behaviours are off by default
+        (``auto_archive_days`` / ``purge_photos_days`` = 0).
+        """
+        if now - self._last_housekeeping < 3600.0:
+            return
+        self._last_housekeeping = now
+        archive_after = self._days_option(
+            conf.CONF_AUTO_ARCHIVE_DAYS, conf.DEFAULT_AUTO_ARCHIVE_DAYS
+        )
+        purge_after = self._days_option(conf.CONF_PURGE_PHOTOS_DAYS, conf.DEFAULT_PURGE_PHOTOS_DAYS)
+        changed = False
+        for batch in self.batches.values():
+            if archive_after > 0 and batch.status is BatchStatus.COMPLETED:
+                latest = batch.latest_sample
+                since = batch.completed_at or (latest.timestamp if latest else batch.created_at)
+                if now - since >= archive_after:
+                    batch.set_status(BatchStatus.ARCHIVED, now)
+                    changed = True
+                    _LOGGER.info("%s: batch %s auto-archived", self.chamber_name, batch.id)
+                    self._fire_event(
+                        EVENT_TYPE_BATCH_ARCHIVED, {"batch_id": batch.id, "name": batch.name}
+                    )
+            if purge_after > 0 and batch.status is BatchStatus.ARCHIVED:
+                since = batch.archived_at or batch.created_at
+                if now - since < purge_after:
+                    continue
+                for index, sample in enumerate(batch.samples):
+                    if sample.photo_url:
+                        await self._delete_photo(batch.id, sample.photo_url)
+                        batch.samples[index] = dataclasses.replace(sample, photo_url=None)
+                        changed = True
         if changed:
             self._persist_batches()
 
@@ -1180,10 +1225,11 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if batch is None:
             raise ValueError(f"Unknown batch '{batch_id}'")
         was_active = batch.status is BatchStatus.ACTIVE
-        batch.status = status
+        now = dt_util.utcnow().timestamp()
+        batch.set_status(status, now)
         self._persist_batches()
         if was_active and status is not BatchStatus.ACTIVE:
-            self._complete_linked_program(batch, dt_util.utcnow().timestamp())
+            self._complete_linked_program(batch, now)
         await self.async_refresh()
 
     async def async_set_batch_status(self, batch_id: str, status: BatchStatus) -> None:
@@ -1284,6 +1330,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "eta_model": batch_engine.eta_model(batch),
             "weigh_in_due": self._weigh_in_due(batch, now),
             "created_at": batch.created_at,
+            "completed_at": batch.completed_at,
             "sample_count": len(batch.samples),
             "event_count": len(batch.events),
             "last_weigh_in": latest.timestamp if latest else None,

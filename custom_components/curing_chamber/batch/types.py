@@ -92,6 +92,8 @@ class Batch:
     target_loss_pct: float | None = None
     created_at: float = 0.0
     status: BatchStatus = BatchStatus.ACTIVE
+    completed_at: float | None = None
+    archived_at: float | None = None
     samples: list[WeightSample] = field(default_factory=list)
     events: list[BatchEvent] = field(default_factory=list)
 
@@ -119,6 +121,17 @@ class Batch:
             return first if first > 0 else None
         return None
 
+    def set_status(self, status: BatchStatus, now: float) -> None:
+        """Change the lifecycle status, stamping completion / archiving times."""
+        self.status = status
+        if status is BatchStatus.COMPLETED:
+            self.completed_at = now
+        elif status is BatchStatus.ARCHIVED:
+            self.archived_at = now
+        else:
+            self.completed_at = None
+            self.archived_at = None
+
     def add_sample(self, sample: WeightSample) -> None:
         """Insert a weigh-in, keeping ``samples`` sorted by timestamp."""
         self.samples.append(sample)
@@ -139,6 +152,8 @@ class Batch:
             "target_loss_pct": self.target_loss_pct,
             "created_at": self.created_at,
             "status": self.status.value,
+            "completed_at": self.completed_at,
+            "archived_at": self.archived_at,
             "samples": [s.to_dict() for s in self.samples],
             "events": [e.to_dict() for e in self.events],
         }
@@ -162,6 +177,8 @@ class Batch:
             target_loss_pct=_opt_float(data.get("target_loss_pct")),
             created_at=_opt_float(data.get("created_at")) or 0.0,
             status=BatchStatus(str(data.get("status", "active"))),
+            completed_at=_opt_float(data.get("completed_at")),
+            archived_at=_opt_float(data.get("archived_at")),
             samples=samples,
             events=events,
         )

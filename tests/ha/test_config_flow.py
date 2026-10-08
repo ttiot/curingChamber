@@ -78,3 +78,20 @@ async def test_options_flow_regulation(hass: HomeAssistant, config_entry, seed_s
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
     assert coordinator.chamber_kind == "cheese"
     assert coordinator.data["config"].condensation_margin == 0.3
+
+
+async def test_options_flow_batches(hass: HomeAssistant, config_entry, seed_states) -> None:
+    seed_states()
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "batches"}
+    )
+    assert result["step_id"] == "batches"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"auto_archive_days": 14, "purge_photos_days": 0}
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert config_entry.options["auto_archive_days"] == 14

@@ -55,7 +55,8 @@
           "sensors": "Sensors",
           "actuators": "Actuators",
           "regulation": "Regulation & safety",
-          "notifications": "Notifications"
+          "notifications": "Notifications",
+          "batches": "Batches & housekeeping"
         }
       },
       "sensors": {
@@ -114,6 +115,14 @@
           "door_open_alert_minutes": "Door-open alert delay (min)",
           "sensor_stale_minutes": "Frozen-sensor timeout (min)",
           "tick_interval": "Control interval (s)"
+        }
+      },
+      "batches": {
+        "title": "Batches & housekeeping",
+        "description": "Keep the batch list and photo storage light. 0 disables each rule.",
+        "data": {
+          "auto_archive_days": "Auto-archive completed batches after N days (0 = off)",
+          "purge_photos_days": "Delete photos of archived batches after N days (0 = off)"
         }
       }
     }
