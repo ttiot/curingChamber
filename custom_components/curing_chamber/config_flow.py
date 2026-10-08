@@ -164,7 +164,11 @@ class CuringChamberConfigFlow(ConfigFlow, domain=DOMAIN):
                         custom_value=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
-                )
+                ),
+                vol.Optional(
+                    conf.CONF_WEIGH_IN_REMINDER_DAYS,
+                    default=float(conf.DEFAULT_WEIGH_IN_REMINDER_DAYS),
+                ): _number(0, 60, 1, "d"),
             }
         )
         return self.async_show_form(step_id="notifications", data_schema=schema)
@@ -241,7 +245,15 @@ class CuringChamberOptionsFlow(OptionsFlow):
                         custom_value=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
-                )
+                ),
+                vol.Optional(
+                    conf.CONF_WEIGH_IN_REMINDER_DAYS,
+                    default=float(
+                        self._merged().get(
+                            conf.CONF_WEIGH_IN_REMINDER_DAYS, conf.DEFAULT_WEIGH_IN_REMINDER_DAYS
+                        )
+                    ),
+                ): _number(0, 60, 1, "d"),
             }
         )
         return self.async_show_form(step_id="notifications", data_schema=schema)

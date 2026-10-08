@@ -117,6 +117,7 @@ SENSORS: tuple[CuringSensorDescription, ...] = (
             "entry_id": d.get("entry_id"),
             "batches": d.get("batches"),
             "reference_batch_id": d.get("reference_batch_id"),
+            "weigh_in_due": d.get("weigh_in_due"),
         },
     ),
     CuringSensorDescription(

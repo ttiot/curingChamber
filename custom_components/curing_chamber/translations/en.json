@@ -34,7 +34,8 @@
         "title": "Curing Chamber — notifications",
         "description": "Optionally pick notify services (e.g. mobile app) for alerts. Persistent notifications are always created.",
         "data": {
-          "notify_services": "Notify services"
+          "notify_services": "Notify services",
+          "weigh_in_reminder_days": "Weigh-in reminder after N days without weigh-in (0 = off)"
         }
       },
       "food_safety": {
@@ -84,7 +85,8 @@
       "notifications": {
         "title": "Notifications",
         "data": {
-          "notify_services": "Notify services"
+          "notify_services": "Notify services",
+          "weigh_in_reminder_days": "Weigh-in reminder after N days without weigh-in (0 = off)"
         }
       },
       "regulation": {

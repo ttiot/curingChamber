@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Weigh-in reminder.** New *Weigh-in reminder after N days* option in the
+  notifications step (default 7 days, 0 disables): an active batch with no
+  weigh-in for that long gets a persistent notification (and the configured
+  notify services) once per interval, a `weigh_in_due` bus event, a
+  `weigh_in_due` flag in its summary (and the list in the *Active batches*
+  sensor attributes) and a badge on its panel card. Recording a weigh-in
+  clears it.
 - **Ineffective-actuator detection.** An actuator that runs continuously for
   longer than the new *Ineffective-actuator detection delay* option (default
   60 min, 0 disables) without moving its quantity by at least 0.3 °C / 2 %RH

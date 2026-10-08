@@ -50,6 +50,7 @@ from .const import (
     EVENT_TYPE_MANUAL_ACTION,
     EVENT_TYPE_PHASE_CHANGED,
     EVENT_TYPE_PROGRAM_COMPLETED,
+    EVENT_TYPE_WEIGH_IN_DUE,
     PHOTO_STORAGE_DIR,
     PHOTO_URL_BASE,
     PHOTO_WWW_SUBDIR,
@@ -263,6 +264,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._handle_program_event(event, inputs)
 
         self._check_batch_completion(now)
+        self._check_weigh_in_reminders(now)
 
         outputs = self.regulation.tick(inputs, reg_config, now)
         await self._apply_commands(outputs)
@@ -289,6 +291,64 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._complete_linked_program(batch, now)
         if changed:
             self._persist_batches()
+
+    # -- Weigh-in reminders --------------------------------------------------
+
+    @property
+    def weigh_in_reminder_seconds(self) -> float:
+        days = float(
+            conf.get(
+                self.entry, conf.CONF_WEIGH_IN_REMINDER_DAYS, conf.DEFAULT_WEIGH_IN_REMINDER_DAYS
+            )
+        )
+        return max(0.0, days) * 86400.0
+
+    def _weigh_in_due(self, batch: Batch, now: float) -> bool:
+        """True when an active batch has gone without a weigh-in for too long."""
+        interval = self.weigh_in_reminder_seconds
+        if interval <= 0 or batch.status is not BatchStatus.ACTIVE:
+            return False
+        latest = batch.latest_sample
+        last = latest.timestamp if latest else batch.created_at
+        return now - last >= interval
+
+    def _check_weigh_in_reminders(self, now: float) -> None:
+        """Notify once per interval for each batch whose weigh-in is overdue."""
+        interval = self.weigh_in_reminder_seconds
+        reminders = self.store.weigh_in_reminders
+        changed = False
+        for batch in self.batches.values():
+            notif_id = f"{DOMAIN}_{self.entry.entry_id}_weigh_in_{batch.id}"
+            if not self._weigh_in_due(batch, now):
+                if reminders.pop(batch.id, None) is not None:
+                    changed = True
+                    persistent_notification.async_dismiss(self.hass, notif_id)
+                continue
+            last_sent = reminders.get(batch.id)
+            if last_sent is not None and now - last_sent < interval:
+                continue
+            latest = batch.latest_sample
+            since = latest.timestamp if latest else batch.created_at
+            days = int((now - since) // 86400)
+            reminders[batch.id] = now
+            changed = True
+            language = self.hass.config.language
+            body = messages.batch_message("weigh_in_due", language, batch=batch.name, days=days)
+            title = f"{messages.title(language)} — {self.chamber_name}"
+            persistent_notification.async_create(
+                self.hass, body, title=title, notification_id=notif_id
+            )
+            for service in conf.get(self.entry, conf.CONF_NOTIFY_SERVICES, []) or []:
+                self._call_notify_service(service, title, body)
+            self._fire_event(
+                EVENT_TYPE_WEIGH_IN_DUE, {"batch_id": batch.id, "name": batch.name, "days": days}
+            )
+        # Forget batches that no longer exist.
+        for batch_id in [b for b in reminders if b not in self.batches]:
+            reminders.pop(batch_id)
+            changed = True
+        if changed:
+            self.store.async_save()
 
     def _complete_linked_program(self, batch: Batch, now: float) -> None:
         """End the running program when the batch that drives it is done.
@@ -1076,6 +1136,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "drying_rate": batch_engine.drying_rate_pct_per_day(batch),
             "eta": batch_engine.estimate_eta(batch, now),
             "eta_model": batch_engine.eta_model(batch),
+            "weigh_in_due": self._weigh_in_due(batch, now),
             "created_at": batch.created_at,
             "sample_count": len(batch.samples),
             "event_count": len(batch.events),
@@ -1244,6 +1305,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "batches": batches,
             "reference_batch_id": ref_id,
             "active_batch_count": active_batches,
+            "weigh_in_due": [b["id"] for b in batches if b.get("weigh_in_due")],
             "reference_batch_loss_pct": ref_summary["loss_pct"] if ref_summary else None,
             "reference_batch_eta": (
                 dt_util.utc_from_timestamp(ref_summary["eta"])

@@ -99,6 +99,7 @@ const STR = {
     rate: "Rate",
     eta: "ETA",
     weigh_ins: "weigh-ins",
+    weigh_in_due: "weigh-in due",
     last_weigh_in: "Last weigh-in",
     drying_curve: "Drying curve",
     curve_needs_two: "The curve appears once two weigh-ins are recorded.",
@@ -286,6 +287,7 @@ const STR = {
     rate: "Vitesse",
     eta: "Fin estimée",
     weigh_ins: "pesées",
+    weigh_in_due: "pesée à faire",
     last_weigh_in: "Dernière pesée",
     drying_curve: "Courbe de séchage",
     curve_needs_two: "La courbe apparaît dès deux pesées.",
@@ -686,6 +688,7 @@ const STYLES = `
     padding: 1px 6px; vertical-align: middle; white-space: nowrap; }
   .badge.status-completed { color: var(--success-color, #43a047); border-color: var(--success-color, #43a047); }
   .badge.status-archived { color: var(--disabled-text-color, #9e9e9e); border-color: var(--disabled-text-color, #9e9e9e); }
+  .badge.due { color: var(--warning-color, #ffa600); border-color: var(--warning-color, #ffa600); }
   .badge.status-active { color: var(--info-color, var(--primary-color)); border-color: var(--info-color, var(--primary-color)); }
   .timeline { display: flex; gap: 4px; margin: 8px 0; }
   .tl-phase { flex: 1 1 0; min-width: 40px; padding: 6px 8px; border-radius: 6px; background: var(--secondary-background-color, var(--divider-color));
@@ -1502,7 +1505,8 @@ class CuringChamberPanel extends HTMLElement {
     const pct = loss == null ? 0 : Math.max(0, Math.min(100, target ? (loss / target) * 100 : loss));
     const card = h("div", { class: "card batch-card", onclick: () => { this._detailBatchId = b.id; this._renderTab(); } }, [
       h("h2", null, [
-        h("span", { class: "grow" }, [b.name, " ", isRef ? h("span", { class: "badge" }, t("reference")) : null]),
+        h("span", { class: "grow" }, [b.name, " ", isRef ? h("span", { class: "badge" }, t("reference")) : null,
+          b.weigh_in_due ? [" ", h("span", { class: "badge due" }, `⚖ ${t("weigh_in_due")}`)] : null]),
         h("span", { class: `badge status-${b.status}` }, t(`status_${b.status}`)),
       ]),
       h("div", { class: "row" }, [

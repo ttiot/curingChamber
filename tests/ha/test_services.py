@@ -15,7 +15,9 @@ from custom_components.curing_chamber.const import (
     CONF_PRODUCT_TEMP_SENSOR,
     CONF_STARTUP_DELAY,
     CONF_TEMP_SENSOR,
+    CONF_WEIGH_IN_REMINDER_DAYS,
     DOMAIN,
+    EVENT_CURING_CHAMBER,
     SERVICE_ADD_BATCH_EVENT,
     SERVICE_COMPLETE_BATCH,
     SERVICE_CREATE_BATCH,
@@ -485,3 +487,53 @@ async def test_core_probe_delta_sensor_and_alert(hass: HomeAssistant, seed_state
     alarm = hass.states.get("binary_sensor.core_out_of_range_alarm")
     assert alarm is not None
     assert alarm.state == "on"
+
+
+async def test_weigh_in_reminder(hass: HomeAssistant, seed_states) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Rem",
+        data={
+            CONF_NAME: "Rem",
+            CONF_TEMP_SENSOR: TEMP_ENTITY,
+            CONF_HUMIDITY_SENSOR: HUMIDITY_ENTITY,
+        },
+        options={CONF_WEIGH_IN_REMINDER_DAYS: 3},
+    )
+    coordinator = await _setup(hass, entry, seed_states)
+    events: list[dict] = []
+    hass.bus.async_listen(
+        EVENT_CURING_CHAMBER,
+        lambda e: events.append(e.data) if e.data.get("type") == "weigh_in_due" else None,
+    )
+    await _create_batch(hass)
+    batch_id = next(iter(coordinator.batches))
+    batch = coordinator.batches[batch_id]
+    assert not coordinator.data["batches"][0]["weigh_in_due"]
+
+    # Four days without a weigh-in: due, one notification, one event.
+    batch.created_at -= 4 * 86400
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.data["batches"][0]["weigh_in_due"]
+    assert coordinator.data["weigh_in_due"] == [batch_id]
+    assert len(events) == 1
+    assert events[0]["days"] == 4
+    notif_id = f"{DOMAIN}_{entry.entry_id}_weigh_in_{batch_id}"
+    assert notif_id in hass.data["persistent_notification"]
+    sensor = hass.states.get("sensor.rem_active_batches")
+    assert sensor is not None
+    assert sensor.attributes["weigh_in_due"] == [batch_id]
+
+    # Still due on the next tick, but not re-notified within the interval.
+    await coordinator.async_refresh()
+    assert len(events) == 1
+
+    # A weigh-in clears the reminder and dismisses the notification.
+    await hass.services.async_call(
+        DOMAIN, SERVICE_RECORD_WEIGHT, {"batch_id": batch_id, "weight": 990.0}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert not coordinator.data["batches"][0]["weigh_in_due"]
+    assert notif_id not in hass.data["persistent_notification"]
+    assert batch_id not in coordinator.store.weigh_in_reminders

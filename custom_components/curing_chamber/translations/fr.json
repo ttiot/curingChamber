@@ -34,7 +34,8 @@
         "title": "Séchoir — notifications",
         "description": "Choisissez éventuellement des services de notification (ex. application mobile) pour les alertes. Des notifications persistantes sont toujours créées.",
         "data": {
-          "notify_services": "Services de notification"
+          "notify_services": "Services de notification",
+          "weigh_in_reminder_days": "Rappel de pesée après N jours sans pesée (0 = off)"
         }
       },
       "food_safety": {
@@ -84,7 +85,8 @@
       "notifications": {
         "title": "Notifications",
         "data": {
-          "notify_services": "Services de notification"
+          "notify_services": "Services de notification",
+          "weigh_in_reminder_days": "Rappel de pesée après N jours sans pesée (0 = off)"
         }
       },
       "regulation": {

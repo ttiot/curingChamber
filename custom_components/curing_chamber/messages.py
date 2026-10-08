@@ -146,6 +146,24 @@ _PROGRAM: dict[str, dict[str, str]] = {
 }
 
 
+_BATCH: dict[str, dict[str, str]] = {
+    "weigh_in_due": {
+        "en": "Batch {batch}: no weigh-in for {days} days — time to weigh it.",
+        "fr": "Lot {batch} : aucune pesée depuis {days} jours — pensez à le peser.",
+    },
+}
+
+
+def batch_message(event_type: str, language: str | None, **params: object) -> str:
+    """Return the localized message body for a batch event."""
+    lang = _lang(language)
+    template = _BATCH.get(event_type, {}).get(lang, event_type)
+    try:
+        return template.format(**params)
+    except (KeyError, IndexError):
+        return template
+
+
 def _lang(language: str | None) -> str:
     if language and language.lower().startswith("fr"):
         return "fr"

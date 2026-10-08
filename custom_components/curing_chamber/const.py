@@ -34,6 +34,8 @@ CONF_VENT_SWITCH: Final = "vent_switch"
 
 # Notifications ---------------------------------------------------------------
 CONF_NOTIFY_SERVICES: Final = "notify_services"
+CONF_WEIGH_IN_REMINDER_DAYS: Final = "weigh_in_reminder_days"
+DEFAULT_WEIGH_IN_REMINDER_DAYS: Final = 7  # days, 0 = off
 
 # Regulation tuning -----------------------------------------------------------
 CONF_TEMP_DEADBAND: Final = "temp_deadband"
@@ -123,6 +125,7 @@ EVENT_TYPE_ALERT_CLEARED: Final = "alert_cleared"
 EVENT_TYPE_MANUAL_ACTION: Final = "manual_action_required"
 EVENT_TYPE_BATCH_COMPLETED: Final = "batch_completed"
 EVENT_TYPE_BATCH_EVENT: Final = "batch_event"
+EVENT_TYPE_WEIGH_IN_DUE: Final = "weigh_in_due"
 
 # --- Storage -----------------------------------------------------------------
 STORAGE_VERSION: Final = 1
