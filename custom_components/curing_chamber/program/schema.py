@@ -51,7 +51,9 @@ def _opt_number(data: dict[str, object], field: str, *, lo: float, hi: float) ->
     return _number(data[field], field, lo=lo, hi=hi)
 
 
-def validate_phase(data: object, index: int, *, has_scale: bool) -> tuple[Phase, list[str]]:
+def validate_phase(
+    data: object, index: int, *, has_scale: bool, has_core_probe: bool = True
+) -> tuple[Phase, list[str]]:
     """Validate one phase dict; return the phase and any non-fatal warnings."""
     warnings: list[str] = []
     phase = _as_dict(data, f"phase #{index + 1} must be an object")
@@ -73,6 +75,7 @@ def validate_phase(data: object, index: int, *, has_scale: bool) -> tuple[Phase,
 
     duration_hours = _opt_number(phase, "duration_hours", lo=0, hi=100000)
     weight_loss_pct = _opt_number(phase, "weight_loss_pct", lo=0, hi=90)
+    core_temp_target = _opt_number(phase, "core_temp_target", lo=-30, hi=100)
 
     # Optional ramp: start values move linearly to the targets over ramp_hours.
     start_temp = _opt_number(phase, "start_temp", lo=-30, hi=60)
@@ -115,6 +118,18 @@ def validate_phase(data: object, index: int, *, has_scale: bool) -> tuple[Phase,
                 "add duration_hours as a fallback",
             )
             warnings.append(f"phase '{name}': no scale configured, falling back to duration")
+    if end_kind is EndKind.CORE_TEMP:
+        _require(
+            core_temp_target is not None,
+            f"phase '{name}' (core_temp) needs core_temp_target",
+        )
+        if not has_core_probe:
+            _require(
+                duration_hours is not None,
+                f"phase '{name}' uses core_temp but no core probe is configured; "
+                "add duration_hours as a fallback",
+            )
+            warnings.append(f"phase '{name}': no core probe configured, falling back to duration")
 
     return (
         Phase(
@@ -128,12 +143,15 @@ def validate_phase(data: object, index: int, *, has_scale: bool) -> tuple[Phase,
             start_temp=start_temp,
             start_humidity=start_humidity,
             ramp_hours=ramp_hours if ramp_hours else None,
+            core_temp_target=core_temp_target,
         ),
         warnings,
     )
 
 
-def validate_program(data: object, *, has_scale: bool = True) -> tuple[Program, list[str]]:
+def validate_program(
+    data: object, *, has_scale: bool = True, has_core_probe: bool = True
+) -> tuple[Program, list[str]]:
     """Validate a whole program payload; return the program and warnings."""
     payload = _as_dict(data, "program must be an object")
     program_id = _text(payload.get("id"), "program needs an id")
@@ -156,7 +174,9 @@ def validate_program(data: object, *, has_scale: bool = True) -> tuple[Program, 
     phases: list[Phase] = []
     warnings: list[str] = []
     for index, phase_raw in enumerate(phases_raw):
-        phase, phase_warnings = validate_phase(phase_raw, index, has_scale=has_scale)
+        phase, phase_warnings = validate_phase(
+            phase_raw, index, has_scale=has_scale, has_core_probe=has_core_probe
+        )
         phases.append(phase)
         warnings.extend(phase_warnings)
 
@@ -185,7 +205,9 @@ def export_payload(programs: list[Program]) -> dict[str, object]:
     }
 
 
-def validate_import(data: object, *, has_scale: bool = True) -> tuple[list[Program], list[str]]:
+def validate_import(
+    data: object, *, has_scale: bool = True, has_core_probe: bool = True
+) -> tuple[list[Program], list[str]]:
     """Validate an import payload; return the programs and warnings.
 
     Accepts the export envelope (``{"programs": [...]}``), a bare list of
@@ -203,7 +225,9 @@ def validate_import(data: object, *, has_scale: bool = True) -> tuple[list[Progr
     warnings: list[str] = []
     seen: set[str] = set()
     for raw in raw_programs:
-        program, program_warnings = validate_program(raw, has_scale=has_scale)
+        program, program_warnings = validate_program(
+            raw, has_scale=has_scale, has_core_probe=has_core_probe
+        )
         _require(program.id not in seen, f"duplicate program id '{program.id}' in import")
         seen.add(program.id)
         programs.append(program)

@@ -104,6 +104,7 @@
           "temp_abs_max": "Absolute maximum temperature (°C)",
           "humidity_abs_min": "Absolute minimum humidity (%RH)",
           "humidity_abs_max": "Absolute maximum humidity (%RH)",
+          "core_temp_max": "Product core maximum temperature (°C)",
           "condensation_margin": "Condensation alert margin above dew point (°C)",
           "degraded_delay": "Degraded-mode onset delay (s)",
           "degraded_reminder": "Alert reminder interval (s)",
@@ -176,6 +177,9 @@
       },
       "degraded_hours": {
         "name": "Degraded mode hours"
+      },
+      "core_delta": {
+        "name": "Core temperature delta"
       }
     },
     "binary_sensor": {

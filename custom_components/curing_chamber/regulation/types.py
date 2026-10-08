@@ -49,6 +49,7 @@ class AlertKey(StrEnum):
     ABS_LIMIT_HUMIDITY_HIGH = "abs_limit_humidity_high"
     ABS_LIMIT_HUMIDITY_LOW = "abs_limit_humidity_low"
     HIGH_TEMP_DRYING = "high_temp_drying"
+    CORE_TEMP_HIGH = "core_temp_high"
     CASE_HARDENING = "case_hardening"
     CONDENSATION_RISK = "condensation_risk"
     DOOR_OPEN_TOO_LONG = "door_open_too_long"
@@ -115,6 +116,9 @@ class RegulationConfig:
     case_hardening_rate: float = 1.5
     high_temp_drying_limit: float = 16.0
     high_temp_drying_duration: float = 7200.0
+    #: Product core temperature above which a critical alert is raised (after
+    #: ``high_temp_drying_duration``), whatever the phase.
+    core_temp_max: float = 24.0
     condensation_margin: float = 1.0
 
     fan_period: float = 1800.0

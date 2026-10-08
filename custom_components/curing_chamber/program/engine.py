@@ -145,32 +145,65 @@ class ProgramEngine:
             return []
         return self._advance(now, notify_current=True)
 
-    def tick(self, now: float, weight: float | None = None) -> list[ProgramEvent]:
+    def complete(self, now: float) -> list[ProgramEvent]:
+        """End the program now (e.g. its batch was completed by hand).
+
+        The current phase ends, the program is marked completed and its
+        ``on_complete`` policy applies as if the last phase had finished.
+        """
+        if self.program is None or self.state.status not in (
+            ProgramStatus.RUNNING,
+            ProgramStatus.PAUSED,
+        ):
+            return []
+        self.state.phase_index = len(self.program.phases) - 1
+        return self._advance(now, notify_current=True)
+
+    def tick(
+        self, now: float, weight: float | None = None, core_temp: float | None = None
+    ) -> list[ProgramEvent]:
         """Evaluate the end condition of the current phase and auto-advance."""
         if self.state.status is not ProgramStatus.RUNNING or self.program is None:
             return []
         phase = self.current_phase
         if phase is None:
             return []
-        if self._end_condition_met(phase, now, weight):
+        if core_temp is not None and self.state.core_temp_start is None:
+            self.state.core_temp_start = core_temp
+        if self._end_condition_met(phase, now, weight, core_temp):
             return self._advance(now, notify_current=phase.notify_end)
         return []
 
     # -- Internals -----------------------------------------------------------
 
-    def _end_condition_met(self, phase: Phase, now: float, weight: float | None) -> bool:
+    def _end_condition_met(
+        self, phase: Phase, now: float, weight: float | None, core_temp: float | None
+    ) -> bool:
         elapsed = self.elapsed_in_phase(now)
         if phase.end_kind is EndKind.MANUAL:
             return False
+        cap_reached = phase.duration_hours is not None and elapsed >= phase.duration_hours * 3600.0
         if phase.end_kind is EndKind.DURATION:
-            return phase.duration_hours is not None and elapsed >= phase.duration_hours * 3600.0
+            return cap_reached
+        if phase.end_kind is EndKind.CORE_TEMP:
+            # Met when the core crosses the target from where it started, or on
+            # the duration safety cap / fallback without a core probe.
+            return cap_reached or self._core_target_reached(phase, core_temp)
         # WEIGHT_LOSS: met on target loss, or on the duration safety cap / fallback.
         loss = self.weight_loss_pct(weight)
         target_reached = (
             phase.weight_loss_pct is not None and loss is not None and loss >= phase.weight_loss_pct
         )
-        cap_reached = phase.duration_hours is not None and elapsed >= phase.duration_hours * 3600.0
         return target_reached or cap_reached
+
+    def _core_target_reached(self, phase: Phase, core_temp: float | None) -> bool:
+        target = phase.core_temp_target
+        start = self.state.core_temp_start
+        if target is None or core_temp is None or start is None:
+            return False
+        if start >= target:
+            return core_temp <= target
+        return core_temp >= target
 
     def _advance(self, now: float, notify_current: bool) -> list[ProgramEvent]:
         assert self.program is not None
@@ -197,6 +230,7 @@ class ProgramEngine:
         self.state.phase_started_at = now
         self.state.accumulated_paused = 0.0
         self.state.paused_at = None
+        self.state.core_temp_start = None
         # A forced advance while paused resumes running.
         self.state.status = ProgramStatus.RUNNING
         events.append(self._phase_event(ProgramEventType.PHASE_STARTED, next_index))

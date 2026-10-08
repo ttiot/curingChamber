@@ -38,7 +38,7 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 from . import batch as batch_engine
 from . import config as conf
 from . import messages
-from .batch import Batch, BatchStatus, WeightSample
+from .batch import Batch, BatchEvent, BatchStatus, WeightSample
 from .const import (
     COUNTER_DEGRADED,
     DOMAIN,
@@ -46,6 +46,7 @@ from .const import (
     EVENT_TYPE_ALERT_CLEARED,
     EVENT_TYPE_ALERT_RAISED,
     EVENT_TYPE_BATCH_COMPLETED,
+    EVENT_TYPE_BATCH_EVENT,
     EVENT_TYPE_MANUAL_ACTION,
     EVENT_TYPE_PHASE_CHANGED,
     EVENT_TYPE_PROGRAM_COMPLETED,
@@ -257,11 +258,11 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Advance the program (may change active targets and emit events). The
         # weight driving the weight-loss end condition is the reference batch's
         # latest weigh-in, falling back to the chamber scale (see _read_inputs).
-        program_events = self.program.tick(now, weight=inputs.weight)
+        program_events = self.program.tick(now, weight=inputs.weight, core_temp=inputs.product_temp)
         for event in program_events:
             self._handle_program_event(event, inputs)
 
-        self._check_batch_completion()
+        self._check_batch_completion(now)
 
         outputs = self.regulation.tick(inputs, reg_config, now)
         await self._apply_commands(outputs)
@@ -271,7 +272,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._persist_program()
         return self._snapshot(inputs, reg_config, outputs)
 
-    def _check_batch_completion(self) -> None:
+    def _check_batch_completion(self, now: float) -> None:
         """Mark active batches whose target weight loss has been reached."""
         changed = False
         for batch in self.batches.values():
@@ -285,8 +286,36 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     EVENT_TYPE_BATCH_COMPLETED,
                     {"batch_id": batch.id, "name": batch.name, "loss_pct": round(loss, 1)},
                 )
+                self._complete_linked_program(batch, now)
         if changed:
             self._persist_batches()
+
+    def _complete_linked_program(self, batch: Batch, now: float) -> None:
+        """End the running program when the batch that drives it is done.
+
+        Applies when the batch is linked to the running program (same
+        ``program_id``), is the reference batch, and no other active batch is
+        linked to that program. The program's ``on_complete`` policy then
+        applies (hold the last targets, or stop regulating).
+        """
+        if (
+            batch.program_id is None
+            or self.program.status not in (ProgramStatus.RUNNING, ProgramStatus.PAUSED)
+            or self.program.state.program_id != batch.program_id
+            or self.store.reference_batch_id != batch.id
+        ):
+            return
+        others = [
+            b
+            for b in self.batches.values()
+            if b.id != batch.id
+            and b.status is BatchStatus.ACTIVE
+            and b.program_id == batch.program_id
+        ]
+        if others:
+            return
+        for event in self.program.complete(now):
+            self._handle_program_event(event, self._read_inputs(now))
 
     # -- Reading sensors -----------------------------------------------------
 
@@ -480,6 +509,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             case_hardening_rate=float(
                 conf.get(e, conf.CONF_CASE_HARDENING_RATE, conf.DEFAULT_CASE_HARDENING_RATE)
             ),
+            core_temp_max=float(conf.get(e, conf.CONF_CORE_TEMP_MAX, conf.DEFAULT_CORE_TEMP_MAX)),
             condensation_margin=float(
                 conf.get(
                     e,
@@ -799,8 +829,14 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         reference_weight: float | None = None,
         target_loss_pct: float | None = None,
         set_as_reference: bool = False,
+        start_program: bool = False,
     ) -> Batch:
-        """Create a new batch; make it the reference when asked or if it's first."""
+        """Create a new batch; make it the reference when asked or if it's first.
+
+        With ``start_program`` and a ``program_id``, the linked program is
+        started unless one is already running or paused (that one is left
+        alone so other batches are not disturbed).
+        """
         batch = Batch(
             id=self._new_batch_id(name),
             name=name,
@@ -815,10 +851,71 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.store.set_reference_batch(batch.id)
             self._last_weight = None
         self._persist_batches()
+        if (
+            start_program
+            and program_id
+            and self.program.status not in (ProgramStatus.RUNNING, ProgramStatus.PAUSED)
+        ):
+            await self.async_start_program(program_id)
         # Force an immediate refresh so batch sensors reflect the change now
         # (a debounced request would coalesce with a preceding one).
         await self.async_refresh()
         return batch
+
+    # -- Batch journal -------------------------------------------------------
+
+    async def async_add_batch_event(
+        self,
+        batch_id: str,
+        kind: str,
+        *,
+        note: str | None = None,
+        timestamp: float | None = None,
+    ) -> BatchEvent:
+        """Append a journal entry (salting, turning, washing, tasting, note…)."""
+        batch = self.batches.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        kind = kind.strip()[:40] or "note"
+        ts = timestamp if timestamp is not None else dt_util.utcnow().timestamp()
+        event = BatchEvent(timestamp=ts, kind=kind, note=note)
+        batch.add_event(event)
+        self._persist_batches()
+        self._fire_event(
+            EVENT_TYPE_BATCH_EVENT,
+            {"batch_id": batch.id, "name": batch.name, "kind": kind, "note": note},
+        )
+        await self.async_refresh()
+        return event
+
+    async def async_delete_batch_event(self, batch_id: str, timestamp: float) -> None:
+        """Remove one journal entry from a batch."""
+        batch = self.batches.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        event = next((e for e in batch.events if abs(e.timestamp - timestamp) < 1e-3), None)
+        if event is None:
+            raise ValueError("Unknown journal entry")
+        batch.events.remove(event)
+        self._persist_batches()
+        await self.async_refresh()
+
+    def export_batch(self, batch_id: str) -> dict[str, Any]:
+        """Portable record of one batch: data, derived figures, program used."""
+        batch = self.batches.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Unknown batch '{batch_id}'")
+        now = dt_util.utcnow().timestamp()
+        program = self.find_program(batch.program_id) if batch.program_id else None
+        return {
+            "format": "curing_chamber/batch",
+            "version": 1,
+            "exported_at": now,
+            "chamber": self.chamber_name,
+            "batch": batch.to_dict(),
+            "summary": self._batch_summary(batch, now),
+            "program": program.to_dict() if program else None,
+        }
 
     async def async_record_weight(
         self,
@@ -868,8 +965,11 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         batch = self.batches.get(batch_id)
         if batch is None:
             raise ValueError(f"Unknown batch '{batch_id}'")
+        was_active = batch.status is BatchStatus.ACTIVE
         batch.status = status
         self._persist_batches()
+        if was_active and status is not BatchStatus.ACTIVE:
+            self._complete_linked_program(batch, dt_util.utcnow().timestamp())
         await self.async_refresh()
 
     async def async_set_batch_status(self, batch_id: str, status: BatchStatus) -> None:
@@ -967,8 +1067,10 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "loss_pct": batch_engine.current_loss_pct(batch),
             "drying_rate": batch_engine.drying_rate_pct_per_day(batch),
             "eta": batch_engine.estimate_eta(batch, now),
+            "eta_model": batch_engine.eta_model(batch),
             "created_at": batch.created_at,
             "sample_count": len(batch.samples),
+            "event_count": len(batch.events),
             "last_weigh_in": latest.timestamp if latest else None,
             "last_photo_url": next(
                 (s.photo_url for s in reversed(batch.samples) if s.photo_url), None
@@ -976,6 +1078,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         if with_samples:
             summary["samples"] = [s.to_dict() for s in batch.samples]
+            summary["events"] = [e.to_dict() for e in batch.events]
         return summary
 
     def _batch_summaries(
@@ -1007,6 +1110,10 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def has_scale(self) -> bool:
         return bool(conf.get(self.entry, conf.CONF_WEIGHT_SENSOR))
 
+    @property
+    def has_core_probe(self) -> bool:
+        return bool(conf.get(self.entry, conf.CONF_PRODUCT_TEMP_SENSOR))
+
     def chamber_state(self) -> dict[str, Any]:
         """Live chamber snapshot for the panel (websocket ``state``/``subscribe``)."""
         data = self.data or {}
@@ -1029,6 +1136,10 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "humidity": data.get("humidity"),
             "dew_point": data.get("dew_point"),
             "absolute_humidity": data.get("absolute_humidity"),
+            "core_temp": data.get("core_temp"),
+            "core_delta": data.get("core_delta"),
+            "has_core_probe": self.has_core_probe,
+            "has_scale": self.has_scale,
             "target_temp": data.get("target_temp"),
             "target_humidity": data.get("target_humidity"),
             "temp_divergence": data.get("temp_divergence"),
@@ -1113,6 +1224,8 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "humidity": inputs.humidity,
             "dew_point": dew_point,
             "absolute_humidity": abs_humidity,
+            "core_temp": inputs.product_temp,
+            "core_delta": derived.core_delta(inputs.product_temp, inputs.temp),
             "temp_divergence": temp_div,
             "humidity_divergence": hum_div,
             "weight": inputs.weight,

@@ -57,6 +57,7 @@ async def test_chambers_and_state(
             "name": "Test Chamber",
             "device_id": msg["result"][0]["device_id"],
             "has_scale": False,
+            "has_core_probe": False,
         }
     ]
     assert msg["result"][0]["device_id"]
@@ -361,3 +362,65 @@ async def test_program_import_command(
     mine = next(p for p in msg["result"] if p["id"] == "ramped")
     assert mine["category"] == "cheese"
     assert mine["phases"][0]["start_temp"] == 16.0
+
+
+async def test_batch_journal_and_export(
+    hass: HomeAssistant, hass_ws_client, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    client = await hass_ws_client(hass)
+    entry_id = config_entry.entry_id
+    created = await _create_batch(client, entry_id, program_id="coppa", start_program=True)
+    batch_id = created["id"]
+    # The linked program started with the batch.
+    assert coordinator.program.status.value == "running"
+    assert coordinator.program.state.program_id == "coppa"
+
+    msg = await _call(
+        client,
+        "batch/event/add",
+        entry_id=entry_id,
+        batch_id=batch_id,
+        kind="salting",
+        note="2.8 % salt",
+        timestamp=1000.0,
+    )
+    assert msg["success"], msg
+    msg = await _call(
+        client, "batch/event/add", entry_id=entry_id, batch_id=batch_id, kind="turned"
+    )
+    assert msg["success"], msg
+    assert msg["result"]["event_count"] == 2
+    assert [e["kind"] for e in msg["result"]["events"]] == ["salting", "turned"]
+
+    msg = await _call(client, "weigh_in", entry_id=entry_id, batch_id=batch_id, weight=950.0)
+    assert msg["success"], msg
+
+    msg = await _call(client, "batch/export", entry_id=entry_id, batch_id=batch_id)
+    assert msg["success"], msg
+    export = msg["result"]
+    assert export["format"] == "curing_chamber/batch"
+    assert export["chamber"] == "Test Chamber"
+    assert export["program"]["id"] == "coppa"
+    assert len(export["batch"]["events"]) == 2
+    assert len(export["batch"]["samples"]) == 1
+    assert export["summary"]["loss_pct"] == 5.0
+
+    msg = await _call(
+        client, "batch/event/delete", entry_id=entry_id, batch_id=batch_id, timestamp=1000.0
+    )
+    assert msg["success"], msg
+    assert msg["result"]["event_count"] == 1
+    msg = await _call(
+        client, "batch/event/delete", entry_id=entry_id, batch_id=batch_id, timestamp=1000.0
+    )
+    assert not msg["success"]
+
+    # Completing the reference batch ends its linked program (hold_last keeps targets).
+    msg = await _call(
+        client, "batch/set_status", entry_id=entry_id, batch_id=batch_id, status="completed"
+    )
+    assert msg["success"], msg
+    assert coordinator.program.status.value == "completed"
+    msg = await _call(client, "batch/export", entry_id=entry_id, batch_id="nope")
+    assert not msg["success"]

@@ -60,6 +60,11 @@ _ALERTS: dict[str, dict[str, str]] = {
         "en": "Health risk: temperature {value}°C above {target}°C for over 2 h during drying.",
         "fr": "Risque sanitaire : température {value}°C au-dessus de {target}°C depuis plus de 2 h en séchage.",
     },
+    "core_temp_high": {
+        "en": "Health risk: product core {value}°C above {target}°C for over 2 h.",
+        "fr": "Risque sanitaire : cœur du produit à {value}°C au-dessus de {target}°C depuis plus "
+        "de 2 h.",
+    },
     "case_hardening": {
         "en": "Case hardening risk: drying too fast or humidity too low. Slow the drying down.",
         "fr": "Risque de croûtage : séchage trop rapide ou hygrométrie trop basse. Ralentissez le séchage.",

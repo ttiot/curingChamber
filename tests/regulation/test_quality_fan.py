@@ -156,3 +156,18 @@ def test_sync_actual_state_reflects_manual_override() -> None:
     eng = RegulationEngine(start=0.0)
     eng.sync_actual_state(Actuator.COOL, True, now=PAST)
     assert eng.state[Actuator.COOL] is True
+
+
+def test_core_temp_high_alert() -> None:
+    cfg = make_config(Actuator.COOL, target_temp=13.0, core_temp_max=24.0)
+    eng = RegulationEngine(start=0.0)
+    # Below the limit: nothing. Above it: critical after high_temp_drying_duration.
+    out = eng.tick(RegulationInputs(temp=13.0, temp_valid=True, product_temp=20.0), cfg, PAST)
+    assert not any(a.key is AlertKey.CORE_TEMP_HIGH for a in out.alerts)
+    cfg = make_config(
+        Actuator.COOL, target_temp=13.0, core_temp_max=24.0, high_temp_drying_duration=0.0
+    )
+    out = eng.tick(RegulationInputs(temp=13.0, temp_valid=True, product_temp=25.5), cfg, PAST)
+    alert = next(a for a in out.alerts if a.key is AlertKey.CORE_TEMP_HIGH)
+    assert alert.level.value == "critical"
+    assert alert.params["value"] == 25.5

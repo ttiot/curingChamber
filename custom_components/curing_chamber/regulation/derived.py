@@ -63,3 +63,10 @@ def weight_loss_pct(weight_now: float, reference_weight: float) -> float | None:
     if reference_weight <= 0:
         return None
     return (reference_weight - weight_now) / reference_weight * 100.0
+
+
+def core_delta(product_temp_c: float | None, chamber_temp_c: float | None) -> float | None:
+    """Product core minus chamber air temperature (°C), ``None`` without both."""
+    if product_temp_c is None or chamber_temp_c is None:
+        return None
+    return product_temp_c - chamber_temp_c
