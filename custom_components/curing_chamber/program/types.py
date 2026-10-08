@@ -11,6 +11,7 @@ class EndKind(StrEnum):
 
     DURATION = "duration"
     WEIGHT_LOSS = "weight_loss"
+    CORE_TEMP = "core_temp"
     MANUAL = "manual"
 
 
@@ -54,6 +55,11 @@ class Phase:
     acts as a safety cap for a ``WEIGHT_LOSS`` phase (the "~N weeks" fallback
     used by the presets, and the fallback when no scale is available).
 
+    A ``CORE_TEMP`` phase ends when the product core temperature reaches
+    ``core_temp_target`` (crossing it from where it stood at phase start, in
+    either direction); ``duration_hours`` is again the safety cap / fallback
+    without a core probe.
+
     A phase may start with a **ramp**: when ``ramp_hours`` is set, the active
     targets move linearly from ``start_temp`` / ``start_humidity`` (each
     optional; a missing start value means that quantity is not ramped) to
@@ -71,6 +77,7 @@ class Phase:
     start_temp: float | None = None
     start_humidity: float | None = None
     ramp_hours: float | None = None
+    core_temp_target: float | None = None
 
     @property
     def has_ramp(self) -> bool:
@@ -114,6 +121,7 @@ class Phase:
             "start_temp": self.start_temp,
             "start_humidity": self.start_humidity,
             "ramp_hours": self.ramp_hours,
+            "core_temp_target": self.core_temp_target,
         }
 
     @classmethod
@@ -129,6 +137,7 @@ class Phase:
             start_temp=_opt_float(data.get("start_temp")),
             start_humidity=_opt_float(data.get("start_humidity")),
             ramp_hours=_opt_float(data.get("ramp_hours")),
+            core_temp_target=_opt_float(data.get("core_temp_target")),
         )
 
 
@@ -180,6 +189,9 @@ class ProgramState:
     accumulated_paused: float = 0.0
     paused_at: float | None = None
     reference_weight: float | None = None
+    #: Product core temperature seen when the current phase started (for the
+    #: direction of a ``CORE_TEMP`` end condition).
+    core_temp_start: float | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -191,6 +203,7 @@ class ProgramState:
             "accumulated_paused": self.accumulated_paused,
             "paused_at": self.paused_at,
             "reference_weight": self.reference_weight,
+            "core_temp_start": self.core_temp_start,
         }
 
     @classmethod
@@ -204,6 +217,7 @@ class ProgramState:
             accumulated_paused=_opt_float(data.get("accumulated_paused")) or 0.0,
             paused_at=_opt_float(data.get("paused_at")),
             reference_weight=_opt_float(data.get("reference_weight")),
+            core_temp_start=_opt_float(data.get("core_temp_start")),
         )
 
 

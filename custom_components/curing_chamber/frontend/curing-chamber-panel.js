@@ -16,6 +16,7 @@ const PANEL_TAG = "curing-chamber-panel";
 const LS_CHAMBER = "curing_chamber.panel.entry_id";
 const LS_TAB = "curing_chamber.panel.tab";
 const TABS = ["chamber", "batches", "programs", "history"];
+const JOURNAL_KINDS = ["note", "salting", "hung", "turned", "washed", "tasting", "other"];
 const SIGN_TTL_MS = 50 * 60 * 1000; // re-sign photo urls after ~50 min (signed for 60)
 const CURVE_COLORS = [
   "#1e88e5", "#e53935", "#43a047", "#fb8c00", "#8e24aa", "#00acc1", "#6d4c41", "#546e7a",
@@ -107,6 +108,25 @@ const STR = {
     photo: "Photo",
     delete: "Delete",
     confirm_delete_sample: "Delete this weigh-in?",
+    start_program_now: "Start this program now",
+    journal: "Journal",
+    add_entry: "Add entry",
+    kind: "Kind",
+    kind_note: "Note",
+    kind_salting: "Salting",
+    kind_hung: "Hung / put in chamber",
+    kind_turned: "Turned",
+    kind_washed: "Washed / brushed",
+    kind_tasting: "Tasting",
+    kind_other: "Other",
+    confirm_delete_event: "Delete this journal entry?",
+    export_json: "Export JSON",
+    export_csv: "Export CSV",
+    eta_model_exponential: "exponential model",
+    eta_model_linear: "linear model",
+    no_entries: "No journal entry yet.",
+    core_temp: "Core",
+    core_delta: "core − air",
     confirm_delete_batch: "Delete this batch and all its weigh-ins? This cannot be undone.",
     gallery: "Photos",
     record_weigh_in: "Record a weigh-in",
@@ -143,6 +163,8 @@ const STR = {
     end_duration: "duration",
     end_weight_loss: "weight loss",
     end_manual: "manual",
+    end_core_temp: "core temp.",
+    core_temp_target: "Core °C",
     duration_hours: "Hours",
     weight_loss_pct: "Loss %",
     notify_end: "Notify",
@@ -273,6 +295,25 @@ const STR = {
     photo: "Photo",
     delete: "Supprimer",
     confirm_delete_sample: "Supprimer cette pesée ?",
+    start_program_now: "Démarrer ce programme maintenant",
+    journal: "Journal",
+    add_entry: "Ajouter",
+    kind: "Type",
+    kind_note: "Note",
+    kind_salting: "Salage",
+    kind_hung: "Mise en séchoir",
+    kind_turned: "Retournement",
+    kind_washed: "Lavage / brossage",
+    kind_tasting: "Dégustation",
+    kind_other: "Autre",
+    confirm_delete_event: "Supprimer cette entrée du journal ?",
+    export_json: "Exporter JSON",
+    export_csv: "Exporter CSV",
+    eta_model_exponential: "modèle exponentiel",
+    eta_model_linear: "modèle linéaire",
+    no_entries: "Aucune entrée pour l'instant.",
+    core_temp: "À cœur",
+    core_delta: "cœur − air",
     confirm_delete_batch: "Supprimer ce lot et toutes ses pesées ? Cette action est irréversible.",
     gallery: "Photos",
     record_weigh_in: "Enregistrer une pesée",
@@ -308,6 +349,8 @@ const STR = {
     end_duration: "durée",
     end_weight_loss: "perte de poids",
     end_manual: "manuelle",
+    end_core_temp: "T° à cœur",
+    core_temp_target: "Cœur °C",
     duration_hours: "Heures",
     weight_loss_pct: "Perte %",
     notify_end: "Notifier",
@@ -1190,9 +1233,11 @@ class CuringChamberPanel extends HTMLElement {
         this._gauge(st.temp, st.target_temp, -5, 30, "°C", t("temperature")),
         this._gauge(st.humidity, st.target_humidity, 40, 100, "%", t("humidity")),
         this._gauge(st.dew_point, null, -5, 25, "°C", t("dew_point")),
+        st.has_core_probe ? this._gauge(st.core_temp, null, -5, 30, "°C", t("core_temp")) : null,
       ]),
       h("div", { class: "kv", style: "margin-top:8px" }, [
         st.absolute_humidity != null && h("span", null, [`${t("humidity")} abs. `, h("b", null, fmtNum(st.absolute_humidity, 1, " g/m³"))]),
+        st.core_delta != null && h("span", null, [`${t("core_delta")} `, h("b", null, fmtNum(st.core_delta, 1, " °C"))]),
         st.temp_divergence != null && h("span", null, ["ΔT ", h("b", null, fmtNum(st.temp_divergence, 1, " °C"))]),
         st.humidity_divergence != null && h("span", null, ["ΔRH ", h("b", null, fmtNum(st.humidity_divergence, 1, " %"))]),
       ]),
@@ -1412,6 +1457,7 @@ class CuringChamberPanel extends HTMLElement {
       const detail = [p.target_temp != null ? `${p.target_temp}°` : null, p.target_humidity != null ? `${p.target_humidity}%` : null]
         .filter(Boolean).join(" / ") + (ramp ? ` (${t("ramp").toLowerCase()} ${p.ramp_hours} h)` : "");
       const end = p.end_kind === "weight_loss" ? `-${p.weight_loss_pct || "?"}%`
+        : p.end_kind === "core_temp" ? `→ ${p.core_temp_target != null ? p.core_temp_target : "?"}°`
         : p.end_kind === "manual" ? t("end_manual") : hoursToText(p.duration_hours, t);
       wrap.appendChild(h("div", { class: cls, style: `flex-grow:${grow.toFixed(2)}`, title: `${p.name} · ${detail} · ${end}` },
         `${p.name} · ${end}`));
@@ -1485,6 +1531,9 @@ class CuringChamberPanel extends HTMLElement {
     const refW = h("input", { type: "number", step: "1", min: "0" });
     const target = h("input", { type: "number", step: "1", min: "0", max: "90", value: 30 });
     const asRef = h("input", { type: "checkbox", checked: !this._batches.some((b) => b.status === "active") });
+    const startProg = h("input", { type: "checkbox", checked: true });
+    const startLabel = h("label", { class: "inline", style: "display:none" }, [startProg, t("start_program_now")]);
+    program.addEventListener("change", () => { startLabel.style.display = program.value ? "" : "none"; });
     const back = () => { this._newBatch = false; this._renderTab(); };
     return h("div", { class: "card" }, [
       h("h2", null, t("new_batch")),
@@ -1495,6 +1544,7 @@ class CuringChamberPanel extends HTMLElement {
         h("label", null, [t("reference_weight"), refW]),
         h("label", null, [t("target_loss"), target]),
         h("label", { class: "inline" }, [asRef, t("set_as_reference")]),
+        startLabel,
       ]),
       h("div", { class: "row", style: "margin-top:16px" }, [
         h("button", {
@@ -1502,7 +1552,7 @@ class CuringChamberPanel extends HTMLElement {
             if (!name.value.trim()) { name.focus(); return; }
             const params = { name: name.value.trim(), set_as_reference: asRef.checked };
             if (product.value.trim()) params.product = product.value.trim();
-            if (program.value) params.program_id = program.value;
+            if (program.value) { params.program_id = program.value; params.start_program = startProg.checked; }
             if (refW.value !== "") params.reference_weight = parseFloat(refW.value);
             if (target.value !== "") params.target_loss_pct = parseFloat(target.value);
             try {
@@ -1539,6 +1589,8 @@ class CuringChamberPanel extends HTMLElement {
         b.status === "active" ? h("button", { class: "outline sm", onclick: () => setStatus("completed") }, t("complete")) : null,
         b.status !== "archived" ? h("button", { class: "outline sm", onclick: () => setStatus("archived") }, t("archive")) : null,
         b.status !== "active" ? h("button", { class: "outline sm", onclick: () => setStatus("active") }, t("reactivate")) : null,
+        h("button", { class: "ghost sm", onclick: () => this._exportBatch(b, "json") }, `⇩ ${t("export_json")}`),
+        h("button", { class: "ghost sm", onclick: () => this._exportBatch(b, "csv") }, `⇩ ${t("export_csv")}`),
         h("button", { class: "danger sm", onclick: async () => {
           if (!window.confirm(t("confirm_delete_batch"))) return;
           try { await this._ws("curing_chamber/batch/delete", { batch_id: b.id }); this._detailBatchId = null; await refresh(); } catch (err) { this._showError(err); }
@@ -1558,7 +1610,7 @@ class CuringChamberPanel extends HTMLElement {
         h("span", null, [`${t("weight")} `, h("b", null, fmtNum(b.last_weight, 0))]),
         h("span", null, [`${t("loss")} `, h("b", null, fmtNum(b.loss_pct, 1, " %")), b.target_loss_pct != null ? ` / ${fmtNum(b.target_loss_pct, 0, " %")}` : ""]),
         h("span", null, [`${t("rate")} `, h("b", null, fmtNum(b.drying_rate, 2, " %/d"))]),
-        h("span", null, [`${t("eta")} `, h("b", null, fmtDate(b.eta, this._locale))]),
+        h("span", null, [`${t("eta")} `, h("b", null, fmtDate(b.eta, this._locale)), b.eta_model ? h("span", { class: "small muted" }, ` (${t(`eta_model_${b.eta_model}`)})`) : null]),
         h("span", null, [`${t("date")} `, h("b", null, fmtDate(b.created_at, this._locale))]),
       ]),
       h("h2", null, t("drying_curve")),
@@ -1593,6 +1645,9 @@ class CuringChamberPanel extends HTMLElement {
     }
     grid.appendChild(histCard);
 
+    // Journal
+    grid.appendChild(this._journalCard(b, refresh));
+
     // Gallery
     const photos = (b.samples || []).filter((x) => x.photo_url);
     if (photos.length) {
@@ -1607,6 +1662,79 @@ class CuringChamberPanel extends HTMLElement {
     }
     wrap.appendChild(grid);
     return wrap;
+  }
+
+  _journalCard(b, refresh) {
+    const t = (k) => this._t(k);
+    const kindLabel = (k) => (JOURNAL_KINDS.includes(k) ? t(`kind_${k}`) : k);
+    const events = (b.events || []).slice().reverse();
+    const kind = h("select", null, JOURNAL_KINDS.map((k) => h("option", { value: k }, t(`kind_${k}`))));
+    const note = h("input", { type: "text", placeholder: t("note_placeholder"), style: "flex:1;min-width:140px" });
+    const when = h("input", { type: "datetime-local", value: toLocalInputValue(Date.now() / 1000) });
+    const add = h("button", { class: "sm", onclick: async () => {
+      const params = { batch_id: b.id, kind: kind.value };
+      if (note.value.trim()) params.note = note.value.trim();
+      const ts = fromLocalInputValue(when.value);
+      if (ts != null) params.timestamp = ts;
+      try { await this._ws("curing_chamber/batch/event/add", params); this._showToast(t("recorded")); await refresh(); } catch (err) { this._showError(err); }
+    } }, t("add_entry"));
+    const card = h("div", { class: "card" }, [
+      h("h2", null, t("journal")),
+      h("div", { class: "form" }, [kind, note, when, add]),
+    ]);
+    if (!events.length) card.appendChild(h("div", { class: "muted small", style: "margin-top:8px" }, t("no_entries")));
+    else {
+      card.appendChild(h("div", { class: "table-wrap", style: "margin-top:8px" }, h("table", null, [
+        h("thead", null, h("tr", null, [h("th", null, t("date")), h("th", null, t("kind")), h("th", null, t("note")), h("th")])),
+        h("tbody", null, events.map((e) => h("tr", null, [
+          h("td", null, fmtDateTime(e.timestamp, this._locale)),
+          h("td", null, kindLabel(e.kind)),
+          h("td", { class: "muted" }, e.note || ""),
+          h("td", null, h("button", { class: "ghost sm", title: t("delete"), onclick: async () => {
+            if (!window.confirm(t("confirm_delete_event"))) return;
+            try { await this._ws("curing_chamber/batch/event/delete", { batch_id: b.id, timestamp: e.timestamp }); await refresh(); } catch (err) { this._showError(err); }
+          } }, "✕")),
+        ]))),
+      ])));
+    }
+    return card;
+  }
+
+  /** Download one batch as JSON (full record) or CSV (weigh-ins and journal, one timeline). */
+  async _exportBatch(b, format) {
+    const t = (k) => this._t(k);
+    let data;
+    try {
+      data = await this._ws("curing_chamber/batch/export", { batch_id: b.id });
+    } catch (err) {
+      this._showError(err);
+      return;
+    }
+    const base = `curing-chamber-${b.id}`;
+    if (format === "json") { downloadJson(`${base}.json`, data); return; }
+    const batch = data.batch || {};
+    const ref = data.summary && data.summary.reference_weight;
+    const rows = [["timestamp", "type", "kind", "weight", "loss_pct", "note", "photo_url"]];
+    const iso = (ts) => new Date(ts * 1000).toISOString();
+    const lines = [];
+    for (const x of batch.samples || []) {
+      lines.push({ ts: x.timestamp, row: [iso(x.timestamp), "weigh_in", "", x.weight, ref ? (((ref - x.weight) / ref) * 100).toFixed(2) : "", x.note || "", x.photo_url || ""] });
+    }
+    for (const e of batch.events || []) {
+      lines.push({ ts: e.timestamp, row: [iso(e.timestamp), "event", e.kind, "", "", e.note || "", ""] });
+    }
+    lines.sort((a, c) => a.ts - c.ts);
+    for (const l of lines) rows.push(l.row);
+    const esc = (v) => { const s = String(v == null ? "" : v); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = rows.map((r) => r.map(esc).join(",")).join("\n");
+    const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = h("a", { href: url, download: `${base}.csv` });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    this._showToast(t("applied"));
   }
 
   _weighInForm(b) {
@@ -1825,7 +1953,7 @@ class CuringChamberPanel extends HTMLElement {
     const cheese = this._state && this._state.kind === "cheese";
     return {
       name: "", target_temp: cheese ? 12 : 13, target_humidity: cheese ? 90 : 76, end_kind: "duration", duration_hours: 168,
-      weight_loss_pct: null, notify_end: true, start_temp: null, start_humidity: null, ramp_hours: null,
+      weight_loss_pct: null, core_temp_target: null, notify_end: true, start_temp: null, start_humidity: null, ramp_hours: null,
     };
   }
 
@@ -1873,6 +2001,7 @@ class CuringChamberPanel extends HTMLElement {
       end_kind: row.endKind.value,
       duration_hours: num(row.hours),
       weight_loss_pct: num(row.loss),
+      core_temp_target: num(row.core),
       notify_end: row.notify.checked,
       start_temp: num(row.startTemp),
       start_humidity: num(row.startHum),
@@ -1930,17 +2059,27 @@ class CuringChamberPanel extends HTMLElement {
       row.endKind = h("select", { disabled: readOnly, onchange: validate }, [
         h("option", { value: "duration", selected: ph.end_kind === "duration" }, t("end_duration")),
         h("option", { value: "weight_loss", selected: ph.end_kind === "weight_loss" }, t("end_weight_loss")),
+        h("option", { value: "core_temp", selected: ph.end_kind === "core_temp" }, t("end_core_temp")),
         h("option", { value: "manual", selected: ph.end_kind === "manual" }, t("end_manual")),
       ]);
       row.hours = h("input", { type: "number", step: "1", min: "0", value: ph.duration_hours != null ? ph.duration_hours : "", placeholder: "h", disabled: readOnly, oninput: validate });
       row.loss = h("input", { type: "number", step: "0.5", min: "0", max: "90", value: ph.weight_loss_pct != null ? ph.weight_loss_pct : "", placeholder: "%", disabled: readOnly, oninput: validate });
+      row.core = h("input", { type: "number", step: "0.5", value: ph.core_temp_target != null ? ph.core_temp_target : "", placeholder: t("core_temp_target"), title: t("core_temp_target"), disabled: readOnly, oninput: validate });
+      // One cell: the loss target for weight_loss phases, the core target for core_temp phases.
+      const endCell = h("div", null, [row.loss, row.core]);
+      const syncEndCell = () => {
+        row.core.style.display = row.endKind.value === "core_temp" ? "" : "none";
+        row.loss.style.display = row.endKind.value === "core_temp" ? "none" : "";
+      };
+      row.endKind.addEventListener("change", syncEndCell);
+      syncEndCell();
       row.notify = h("input", { type: "checkbox", checked: ph.notify_end !== false, disabled: readOnly, onchange: validate });
       row.startTemp = h("input", { type: "number", step: "0.5", value: ph.start_temp != null ? ph.start_temp : "", placeholder: "°C", disabled: readOnly, oninput: validate, title: t("ramp_hint") });
       row.startHum = h("input", { type: "number", step: "1", value: ph.start_humidity != null ? ph.start_humidity : "", placeholder: "%", disabled: readOnly, oninput: validate, title: t("ramp_hint") });
       row.rampHours = h("input", { type: "number", step: "1", min: "0", value: ph.ramp_hours != null ? ph.ramp_hours : "", placeholder: "h", disabled: readOnly, oninput: validate, title: t("ramp_hint") });
       els.phases.push(row);
       phasesBox.appendChild(h("div", { class: "phase-row" }, [
-        row.name, row.temp, row.hum, row.endKind, row.hours, row.loss, row.notify,
+        row.name, row.temp, row.hum, row.endKind, row.hours, endCell, row.notify,
         !readOnly ? h("div", { class: "ctl" }, [
           h("button", { class: "ghost sm", title: t("move_up"), disabled: i === 0, onclick: () => { this._readEditor(); const a = p.phases; [a[i - 1], a[i]] = [a[i], a[i - 1]]; this._renderTab(); } }, "↑"),
           h("button", { class: "ghost sm", title: t("move_down"), disabled: i === p.phases.length - 1, onclick: () => { this._readEditor(); const a = p.phases; [a[i + 1], a[i]] = [a[i], a[i + 1]]; this._renderTab(); } }, "↓"),
@@ -2008,6 +2147,7 @@ class CuringChamberPanel extends HTMLElement {
       if (ph.target_humidity != null) out.target_humidity = ph.target_humidity;
       if (ph.duration_hours != null) out.duration_hours = ph.duration_hours;
       if (ph.weight_loss_pct != null) out.weight_loss_pct = ph.weight_loss_pct;
+      if (ph.core_temp_target != null) out.core_temp_target = ph.core_temp_target;
       if (ph.start_temp != null) out.start_temp = ph.start_temp;
       if (ph.start_humidity != null) out.start_humidity = ph.start_humidity;
       if (ph.ramp_hours != null && ph.ramp_hours > 0) out.ramp_hours = ph.ramp_hours;

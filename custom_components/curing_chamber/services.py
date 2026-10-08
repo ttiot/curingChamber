@@ -18,15 +18,17 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_WEIGHT_SENSOR,
     DOMAIN,
     SERVICE_ACKNOWLEDGE_ALERT,
+    SERVICE_ADD_BATCH_EVENT,
     SERVICE_ARCHIVE_BATCH,
     SERVICE_COMPLETE_BATCH,
     SERVICE_CREATE_BATCH,
     SERVICE_CREATE_PROGRAM,
     SERVICE_DELETE_BATCH,
+    SERVICE_DELETE_BATCH_EVENT,
     SERVICE_DELETE_PROGRAM,
+    SERVICE_EXPORT_BATCH,
     SERVICE_EXPORT_PROGRAMS,
     SERVICE_IMPORT_PROGRAMS,
     SERVICE_NEXT_PHASE,
@@ -66,6 +68,8 @@ _ATTR_NOTE = "note"
 _ATTR_PHOTO = "photo"
 _ATTR_PROGRAMS = "programs"
 _ATTR_OVERWRITE = "overwrite"
+_ATTR_START_PROGRAM = "start_program"
+_ATTR_KIND = "kind"
 
 _TARGET = {vol.Optional(_ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string])}
 
@@ -98,7 +102,20 @@ _CREATE_BATCH_SCHEMA = vol.Schema(
         vol.Optional(_ATTR_REFERENCE_WEIGHT): vol.Coerce(float),
         vol.Optional(_ATTR_TARGET_LOSS_PCT): vol.All(vol.Coerce(float), vol.Range(min=0, max=90)),
         vol.Optional(_ATTR_SET_AS_REFERENCE): cv.boolean,
+        vol.Optional(_ATTR_START_PROGRAM, default=False): cv.boolean,
     }
+)
+_ADD_EVENT_SCHEMA = vol.Schema(
+    {
+        **_TARGET,
+        vol.Required(_ATTR_BATCH_ID): cv.string,
+        vol.Required(_ATTR_KIND): vol.All(cv.string, vol.Length(min=1, max=40)),
+        vol.Optional(_ATTR_NOTE): cv.string,
+        vol.Optional(_ATTR_TIMESTAMP): cv.datetime,
+    }
+)
+_DELETE_EVENT_SCHEMA = vol.Schema(
+    {**_TARGET, vol.Required(_ATTR_BATCH_ID): cv.string, vol.Required(_ATTR_TIMESTAMP): cv.datetime}
 )
 _RECORD_WEIGHT_SCHEMA = vol.Schema(
     {
@@ -184,12 +201,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def create_program(call: ServiceCall) -> None:
         for coordinator in _coordinators(hass, call):
-            has_scale = bool(
-                coordinator.entry.data.get(CONF_WEIGHT_SENSOR)
-                or coordinator.entry.options.get(CONF_WEIGHT_SENSOR)
-            )
             try:
-                program, _warnings = validate_program(call.data[_ATTR_PROGRAM], has_scale=has_scale)
+                program, _warnings = validate_program(
+                    call.data[_ATTR_PROGRAM],
+                    has_scale=coordinator.has_scale,
+                    has_core_probe=coordinator.has_core_probe,
+                )
             except ProgramValidationError as err:
                 raise HomeAssistantError(f"Invalid program: {err}") from err
             await coordinator.async_create_program(program)
@@ -216,7 +233,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
         for coordinator in _coordinators(hass, call):
             try:
                 programs, _warnings = validate_import(
-                    call.data[_ATTR_PROGRAMS], has_scale=coordinator.has_scale
+                    call.data[_ATTR_PROGRAMS],
+                    has_scale=coordinator.has_scale,
+                    has_core_probe=coordinator.has_core_probe,
                 )
             except ProgramValidationError as err:
                 raise HomeAssistantError(f"Invalid programs: {err}") from err
@@ -236,7 +255,42 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 reference_weight=call.data.get(_ATTR_REFERENCE_WEIGHT),
                 target_loss_pct=call.data.get(_ATTR_TARGET_LOSS_PCT),
                 set_as_reference=call.data.get(_ATTR_SET_AS_REFERENCE, False),
+                start_program=call.data[_ATTR_START_PROGRAM],
             )
+
+    def _ts(call: ServiceCall) -> float | None:
+        moment = call.data.get(_ATTR_TIMESTAMP)
+        return dt_util.as_utc(moment).timestamp() if moment is not None else None
+
+    async def add_batch_event(call: ServiceCall) -> None:
+        for coordinator in _coordinators(hass, call):
+            try:
+                await coordinator.async_add_batch_event(
+                    call.data[_ATTR_BATCH_ID],
+                    call.data[_ATTR_KIND],
+                    note=call.data.get(_ATTR_NOTE),
+                    timestamp=_ts(call),
+                )
+            except ValueError as err:
+                raise HomeAssistantError(str(err)) from err
+
+    async def delete_batch_event(call: ServiceCall) -> None:
+        timestamp = _ts(call)
+        assert timestamp is not None
+        for coordinator in _coordinators(hass, call):
+            try:
+                await coordinator.async_delete_batch_event(call.data[_ATTR_BATCH_ID], timestamp)
+            except ValueError as err:
+                raise HomeAssistantError(str(err)) from err
+
+    async def export_batch(call: ServiceCall) -> ServiceResponse:
+        """Return the full record of one batch (first matching chamber)."""
+        for coordinator in _coordinators(hass, call):
+            try:
+                return coordinator.export_batch(call.data[_ATTR_BATCH_ID])
+            except ValueError:
+                continue
+        raise HomeAssistantError(f"Unknown batch '{call.data[_ATTR_BATCH_ID]}'")
 
     async def record_weight(call: ServiceCall) -> None:
         moment = call.data.get(_ATTR_TIMESTAMP)
@@ -295,6 +349,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
         (SERVICE_COMPLETE_BATCH, complete_batch, _BATCH_ID_SCHEMA),
         (SERVICE_ARCHIVE_BATCH, archive_batch, _BATCH_ID_SCHEMA),
         (SERVICE_DELETE_BATCH, delete_batch, _BATCH_ID_SCHEMA),
+        (SERVICE_ADD_BATCH_EVENT, add_batch_event, _ADD_EVENT_SCHEMA),
+        (SERVICE_DELETE_BATCH_EVENT, delete_batch_event, _DELETE_EVENT_SCHEMA),
     )
     for name, handler, schema in services:
         hass.services.async_register(DOMAIN, name, handler, schema=schema)
@@ -303,6 +359,13 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_EXPORT_PROGRAMS,
         export_programs,
         schema=_BARE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_EXPORT_BATCH,
+        export_batch,
+        schema=_BATCH_ID_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
@@ -330,6 +393,9 @@ def async_unload_services(hass: HomeAssistant) -> None:
         SERVICE_DELETE_PROGRAM,
         SERVICE_EXPORT_PROGRAMS,
         SERVICE_IMPORT_PROGRAMS,
+        SERVICE_ADD_BATCH_EVENT,
+        SERVICE_DELETE_BATCH_EVENT,
+        SERVICE_EXPORT_BATCH,
         SERVICE_CREATE_BATCH,
         SERVICE_RECORD_WEIGHT,
         SERVICE_SET_REFERENCE_BATCH,

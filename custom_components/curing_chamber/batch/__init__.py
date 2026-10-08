@@ -9,14 +9,26 @@ current weight loss, the drying rate and a predicted completion date (ETA).
 
 from __future__ import annotations
 
-from .engine import current_loss_pct, drying_rate_pct_per_day, estimate_eta
-from .types import Batch, BatchStatus, WeightSample
+from .engine import (
+    ETA_MODEL_EXPONENTIAL,
+    ETA_MODEL_LINEAR,
+    current_loss_pct,
+    drying_rate_pct_per_day,
+    estimate_eta,
+    eta_model,
+)
+from .types import EVENT_KINDS, Batch, BatchEvent, BatchStatus, WeightSample
 
 __all__ = [
+    "ETA_MODEL_EXPONENTIAL",
+    "ETA_MODEL_LINEAR",
+    "EVENT_KINDS",
     "Batch",
+    "BatchEvent",
     "BatchStatus",
     "WeightSample",
     "current_loss_pct",
     "drying_rate_pct_per_day",
     "estimate_eta",
+    "eta_model",
 ]

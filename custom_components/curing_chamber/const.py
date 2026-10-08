@@ -65,6 +65,7 @@ CONF_VENT_PERIOD: Final = "vent_period"
 CONF_VENT_RUN: Final = "vent_run"
 CONF_CO2_THRESHOLD: Final = "co2_threshold"
 CONF_CONDENSATION_MARGIN: Final = "condensation_margin"
+CONF_CORE_TEMP_MAX: Final = "core_temp_max"
 CONF_MANUAL_OVERRIDE_RESPECT: Final = "manual_override_respect_minutes"
 CONF_TICK_INTERVAL: Final = "tick_interval"
 
@@ -100,6 +101,7 @@ DEFAULT_CO2_THRESHOLD: Final = 1500  # ppm
 DEFAULT_MANUAL_OVERRIDE_RESPECT: Final = 0  # minutes (0 = reprendre le contrôle)
 DEFAULT_TICK_INTERVAL: Final = 30  # seconds
 DEFAULT_CONDENSATION_MARGIN: Final = 1.0  # degC
+DEFAULT_CORE_TEMP_MAX: Final = 24.0  # degC, product core
 # A cheese cave runs at 85-95 %RH, where the dew point sits well under 1 degC
 # below the air temperature: a tighter margin keeps the alert meaningful.
 DEFAULT_CONDENSATION_MARGIN_CHEESE: Final = 0.5  # degC
@@ -118,6 +120,7 @@ EVENT_TYPE_ALERT_RAISED: Final = "alert_raised"
 EVENT_TYPE_ALERT_CLEARED: Final = "alert_cleared"
 EVENT_TYPE_MANUAL_ACTION: Final = "manual_action_required"
 EVENT_TYPE_BATCH_COMPLETED: Final = "batch_completed"
+EVENT_TYPE_BATCH_EVENT: Final = "batch_event"
 
 # --- Storage -----------------------------------------------------------------
 STORAGE_VERSION: Final = 1
@@ -142,6 +145,9 @@ SERVICE_SET_REFERENCE_BATCH: Final = "set_reference_batch"
 SERVICE_COMPLETE_BATCH: Final = "complete_batch"
 SERVICE_ARCHIVE_BATCH: Final = "archive_batch"
 SERVICE_DELETE_BATCH: Final = "delete_batch"
+SERVICE_ADD_BATCH_EVENT: Final = "add_batch_event"
+SERVICE_DELETE_BATCH_EVENT: Final = "delete_batch_event"
+SERVICE_EXPORT_BATCH: Final = "export_batch"
 
 # --- Batch photos ------------------------------------------------------------
 # Legacy (pre-panel) location: <config>/www/<PHOTO_WWW_SUBDIR>/<batch_id>/ served

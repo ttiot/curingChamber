@@ -57,6 +57,7 @@ def _chambers(hass: HomeAssistant) -> list[dict[str, Any]]:
                 "name": coordinator.chamber_name,
                 "device_id": device.id if device else None,
                 "has_scale": coordinator.has_scale,
+                "has_core_probe": coordinator.has_core_probe,
             }
         )
     return chambers
@@ -161,6 +162,7 @@ def ws_batch(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, A
             None, vol.All(vol.Coerce(float), vol.Range(min=0, max=90))
         ),
         vol.Optional("set_as_reference", default=False): bool,
+        vol.Optional("start_program", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -176,8 +178,69 @@ async def ws_batch_create(
         reference_weight=msg.get("reference_weight"),
         target_loss_pct=msg.get("target_loss_pct"),
         set_as_reference=msg["set_as_reference"],
+        start_program=msg["start_program"],
     )
     connection.send_result(msg["id"], coordinator.batch_summary(batch.id))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/batch/event/add",
+        **_BATCH,
+        vol.Required("kind"): vol.All(str, vol.Length(min=1, max=40)),
+        vol.Optional("note"): vol.Any(None, str),
+        vol.Optional("timestamp"): vol.Any(None, vol.Coerce(float)),
+    }
+)
+@websocket_api.async_response
+async def ws_batch_event_add(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if (coordinator := _coordinator(hass, connection, msg)) is None:
+        return
+    try:
+        await coordinator.async_add_batch_event(
+            msg["batch_id"],
+            msg["kind"],
+            note=msg.get("note") or None,
+            timestamp=msg.get("timestamp"),
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, str(err))
+        return
+    _send_batch(connection, msg, coordinator)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/batch/event/delete",
+        **_BATCH,
+        vol.Required("timestamp"): vol.Coerce(float),
+    }
+)
+@websocket_api.async_response
+async def ws_batch_event_delete(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if (coordinator := _coordinator(hass, connection, msg)) is None:
+        return
+    try:
+        await coordinator.async_delete_batch_event(msg["batch_id"], msg["timestamp"])
+    except ValueError as err:
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, str(err))
+        return
+    _send_batch(connection, msg, coordinator)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/batch/export", **_BATCH})
+@callback
+def ws_batch_export(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+    if (coordinator := _coordinator(hass, connection, msg)) is None:
+        return
+    try:
+        connection.send_result(msg["id"], coordinator.export_batch(msg["batch_id"]))
+    except ValueError as err:
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, str(err))
 
 
 @websocket_api.websocket_command(
@@ -291,7 +354,9 @@ def ws_programs(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str
 
 def _validate(coordinator: CuringChamberCoordinator, raw: Any) -> dict[str, Any]:
     try:
-        program, warnings = validate_program(raw, has_scale=coordinator.has_scale)
+        program, warnings = validate_program(
+            raw, has_scale=coordinator.has_scale, has_core_probe=coordinator.has_core_probe
+        )
     except ProgramValidationError as err:
         return {"valid": False, "errors": [str(err)], "warnings": [], "program": None}
     errors: list[str] = []
@@ -370,7 +435,11 @@ async def ws_program_import(
     if (coordinator := _coordinator(hass, connection, msg)) is None:
         return
     try:
-        programs, warnings = validate_import(msg["programs"], has_scale=coordinator.has_scale)
+        programs, warnings = validate_import(
+            msg["programs"],
+            has_scale=coordinator.has_scale,
+            has_core_probe=coordinator.has_core_probe,
+        )
     except ProgramValidationError as err:
         connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, str(err))
         return
@@ -393,6 +462,9 @@ _COMMANDS = (
     ws_batch_set_status,
     ws_batch_set_reference,
     ws_batch_delete,
+    ws_batch_event_add,
+    ws_batch_event_delete,
+    ws_batch_export,
     ws_weigh_in,
     ws_weigh_in_delete,
     ws_programs,

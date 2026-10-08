@@ -46,10 +46,14 @@ diagnostics, and full FR/EN translations.
 - **Program import/export** as JSON (panel buttons and services) to share
   recipes between chambers or installations.
 - **Product batches** with **manual weigh-ins** (no scale required, optional
-  note + photo), per-batch drying curve and a **predicted completion date (ETA)**;
-  the reference batch drives the program's weight-loss phase.
+  note + photo), per-batch drying curve, a **predicted completion date (ETA)**
+  from an exponential drying model, a **journal** (salting, turning, washing,
+  tasting…) and JSON / CSV export; the reference batch drives the program's
+  weight-loss phase, and a batch can start and end its linked program.
+- **Product core probe:** core / air delta sensor, critical alert when the core
+  stays too warm, and phases that end when the core reaches a temperature.
 - **Derived sensors:** dew point (Magnus), absolute humidity, weight loss %,
-  drying rate %/day.
+  drying rate %/day, core temperature delta.
 - **Sidebar panel** (no YAML): live gauges and regulation decisions, batch
   cards with drying curves, weigh-in and photo capture from your phone, a
   visual multi-phase program editor and a history view comparing finished
@@ -91,8 +95,8 @@ The config flow has four screens:
 
 Everything is reconfigurable afterwards via *Configure* (options flow):
 **Sensors**, **Actuators**, **Regulation & safety** (chamber kind, deadbands,
-compressor timers, absolute limits, condensation margin, degraded-mode delays…)
-and **Notifications**.
+compressor timers, absolute limits, product core maximum, condensation margin,
+degraded-mode delays…) and **Notifications**.
 
 ---
 
@@ -109,11 +113,12 @@ and **Notifications**.
 | `sensor` | Absolute humidity | g/m³ |
 | `sensor` | Weight loss | % vs reference weight |
 | `sensor` | Drying rate | %/day |
+| `sensor` | Core temperature delta | Product core minus chamber air (°C), with a core probe |
 | `sensor` | Regulation state | idle/cooling/…, with last decisions in attributes |
 | `sensor` | *Actuator* run time | Cumulative run-hours per actuator (maintenance) |
 | `sensor` | Degraded mode hours | Cumulative hours with a manual action required (`total_increasing`, long-term statistics) |
 | `binary_sensor` | Manual action required | ON with recommended action(s) in attributes |
-| `binary_sensor` | Out-of-range alarm | Absolute limit / high-temp breach |
+| `binary_sensor` | Out-of-range alarm | Absolute limit / high-temp breach / product core too warm |
 | `binary_sensor` | Sensor fault | Sensor unavailable or frozen |
 | `binary_sensor` | Probe divergence | Two probes disagree |
 | `binary_sensor` | Door open too long | Door left open past the delay |
@@ -188,9 +193,13 @@ an indicative duration and then hold their targets:
 
 Create/update a program with the `curing_chamber.create_program` service. A
 program is an ordered list of phases; each phase regulates temperature,
-humidity, or both, and ends on `duration`, `weight_loss` or `manual`. A
-`weight_loss` phase should also carry `duration_hours` as a safety cap /
-no-scale fallback. A phase may **ramp**: with `ramp_hours`, the targets move
+humidity, or both, and ends on `duration`, `weight_loss`, `core_temp` or
+`manual`. A `weight_loss` phase should also carry `duration_hours` as a safety
+cap / no-scale fallback. A `core_temp` phase ends when the product core probe
+crosses `core_temp_target` (from wherever it stood when the phase started, in
+either direction, e.g. a pre-chill "until the core is at 4 °C" or a tempering
+"until the core is at 18 °C"); `duration_hours` is again the cap / fallback
+without a probe. A phase may **ramp**: with `ramp_hours`, the targets move
 linearly from `start_temp` / `start_humidity` (each optional) to `target_temp` /
 `target_humidity` over the first `ramp_hours` hours of the phase, then hold.
 Paused time freezes the ramp. The optional `category` (`charcuterie`, the
@@ -255,10 +264,35 @@ scale or be entered by hand — **no scale required** — optionally with a note
 a photo. From the weigh-in history the integration derives each batch's current
 weight loss, drying rate and a **predicted completion date (ETA)**.
 
+**ETA model.** With two weigh-ins the ETA is a straight-line extrapolation of
+the drying rate. From three weigh-ins on, an exponential drying model
+(`loss = L0 + A·(1 − e^(−k·t))`) is fitted and used whenever it explains the
+weigh-ins at least as well as the line and the target lies below its asymptote:
+drying slows down as the product dries, so the exponential ETA lands later
+and closer to reality near the end of curing. The model in use is shown next to
+the ETA in the panel and exposed as `eta_model` (`linear` / `exponential`).
+
 Several batches can be tracked at once; the one you mark as **reference** drives
 the running program's weight-loss phase end (others are tracked for their curve
 and ETA). A batch that reaches its target loss is auto-completed and fires a
 `batch_completed` bus event.
+
+**Batch ↔ program link.** Creating a batch with a `program_id` and
+`start_program: true` (the panel's *Start this program now* box) starts that
+program, unless one is already running or paused. When the **reference** batch
+linked to the running program is completed or archived (by hand or by reaching
+its target) and no other active batch shares that program, the program ends as
+if its last phase had finished and its `on_complete` policy applies.
+
+**Journal.** Each batch keeps a journal of dated entries with a kind (`note`,
+`salting`, `hung`, `turned`, `washed`, `tasting`, `other` or any short text)
+and a note: `add_batch_event` / `delete_batch_event` services, websocket
+`batch/event/add` / `batch/event/delete`, a `batch_event` bus event, and a
+*Journal* card in the panel. `export_batch` (service with a response, websocket
+`batch/export`) returns the whole record — batch, weigh-ins, journal, derived
+figures and the program used; the panel's **Export JSON** / **Export CSV**
+buttons download it (the CSV merges weigh-ins and journal entries in one
+timeline).
 
 ```yaml
 # Create a batch (first one becomes the reference automatically)
@@ -283,7 +317,8 @@ Photos are stored **privately** under
 logged-in users at `/api/curing_chamber/photo/…` (the panel and card sign the
 URL before displaying it). Photos saved by earlier versions under the public
 `www/` folder are moved there automatically on startup. Other batch services:
-`set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`.
+`set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`,
+`add_batch_event`, `delete_batch_event`, `export_batch`.
 
 **Typing a weight from the UI.** Every chamber exposes a **Manual weight**
 `number` entity (`number.<chamber>_manual_weight`). Enter a value from the
@@ -307,14 +342,15 @@ Once a chamber is configured, a **Curing Chamber** entry appears in the sidebar
 no ingress). It is available to all users, not only admins, and follows the
 active theme. Four views:
 
-1. **Chamber** — T° / RH / dew-point gauges with targets, actuator states and
+1. **Chamber** — T° / RH / dew-point (and product core) gauges with targets, actuator states and
    run-hours, the running program with its phase timeline (start / pause /
    next phase / stop), manual targets, regulation & maintenance toggles,
    active alerts with the recommended manual action, last regulation decisions.
 2. **Batches** — active and completed batches, drying curve with the target
-   line and the ETA projection, weigh-in history (deletable), chronological
-   photo gallery, a weigh-in form with direct camera capture (photos are
-   downscaled in the browser), create / reference / complete / archive / delete.
+   line and the ETA projection, weigh-in history (deletable), journal,
+   chronological photo gallery, a weigh-in form with direct camera capture
+   (photos are downscaled in the browser), JSON / CSV export, create (with an
+   optional program start) / reference / complete / archive / delete.
 3. **Programs** — visual editor for multi-phase programs: duplicate a preset,
    edit phases (targets, optional ramp, end condition, duration, weight loss),
    category, live validation, save, delete, start, and **export / import** of
@@ -440,9 +476,7 @@ The control logic lives in three **pure** packages (`regulation/`, `program/`,
 ≥ 85 % without Home Assistant. CI runs ruff, mypy, pytest+coverage, hassfest and
 HACS validation on Python 3.13.
 
-Roadmap: PID control, an exponential (rather than linear) drying-curve model
-for a sharper ETA near the end of curing, and the use of the product core
-temperature probe.
+Roadmap: PID control.
 
 ---
 ---
@@ -491,10 +525,16 @@ d'action manuelle en mode dégradé, diagnostics, traductions FR/EN complètes.
 - **Import / export des programmes** en JSON (boutons du panneau et services)
   pour partager ses recettes entre chambres ou installations.
 - **Lots de produits** avec **pesées manuelles** (sans balance, note + photo
-  optionnelles), courbe de séchage par lot et **date de fin estimée (ETA)** ; le
-  lot de référence pilote la phase de perte de poids du programme.
+  optionnelles), courbe de séchage par lot, **date de fin estimée (ETA)** par un
+  modèle de séchage exponentiel, **journal** (salage, retournement, lavage,
+  dégustation…) et export JSON / CSV ; le lot de référence pilote la phase de
+  perte de poids du programme, et un lot peut démarrer et terminer son
+  programme.
+- **Sonde à cœur** : capteur d'écart cœur / air, alerte critique si le cœur
+  reste trop chaud, et phases qui se terminent quand le cœur atteint une
+  température.
 - **Capteurs dérivés** : point de rosée (Magnus), humidité absolue, perte de
-  poids %, vitesse de séchage %/jour.
+  poids %, vitesse de séchage %/jour, écart de température à cœur.
 - **Panneau latéral** (sans YAML) : jauges et décisions de régulation en
   direct, fiches de lots avec courbes de séchage, pesée et photo depuis le
   téléphone, éditeur visuel de programmes multi-phases et historique comparant
@@ -530,8 +570,8 @@ Le config flow comporte quatre écrans :
 
 Tout est reconfigurable ensuite via *Configurer* (options) : **Capteurs**,
 **Actionneurs**, **Régulation & sécurité** (type de chambre, bandes mortes,
-temporisations compresseur, limites absolues, marge de condensation, délais mode
-dégradé…), **Notifications**.
+temporisations compresseur, limites absolues, maximum à cœur du produit, marge
+de condensation, délais mode dégradé…), **Notifications**.
 
 ## Entités
 
@@ -546,11 +586,12 @@ dégradé…), **Notifications**.
 | `sensor` | Humidité absolue | g/m³ |
 | `sensor` | Perte de poids | % vs poids de référence |
 | `sensor` | Vitesse de séchage | %/jour |
+| `sensor` | Écart température à cœur | Cœur du produit moins air de la chambre (°C), avec une sonde à cœur |
 | `sensor` | État de régulation | ralenti/froid/…, dernières décisions en attributs |
 | `sensor` | Temps de fonct. *actionneur* | Heures cumulées par actionneur (maintenance) |
 | `sensor` | Heures en mode dégradé | Heures cumulées avec action manuelle requise (`total_increasing`, statistiques long terme) |
 | `binary_sensor` | Action manuelle requise | ON, action(s) recommandée(s) en attributs |
-| `binary_sensor` | Alarme hors-plage | Limite absolue / T° trop haute |
+| `binary_sensor` | Alarme hors-plage | Limite absolue / T° trop haute / cœur du produit trop chaud |
 | `binary_sensor` | Défaut capteur | Capteur indisponible ou figé |
 | `binary_sensor` | Divergence des sondes | Deux sondes en désaccord |
 | `binary_sensor` | Porte ouverte trop longtemps | — |
@@ -620,7 +661,10 @@ se terminent sur une durée indicative puis maintiennent leurs consignes :
 Créez/modifiez un programme avec le service `curing_chamber.create_program` (même
 format que ci-dessus, section anglaise). Une phase en `weight_loss` doit aussi
 porter `duration_hours` (plafond de sécurité / repli sans balance). Une phase
-peut porter une **rampe** : avec `ramp_hours`, les consignes passent
+`core_temp` se termine quand la sonde à cœur franchit `core_temp_target`
+(depuis la valeur du début de phase, dans un sens ou dans l'autre, par ex. une
+pré-réfrigération « jusqu'à 4 °C à cœur ») ; `duration_hours` reste le plafond
+/ repli sans sonde. Une phase peut porter une **rampe** : avec `ramp_hours`, les consignes passent
 linéairement de `start_temp` / `start_humidity` (chacune optionnelle) à
 `target_temp` / `target_humidity` sur les premières `ramp_hours` heures de la
 phase, puis se maintiennent ; une pause fige la rampe. Démarrez avec
@@ -646,10 +690,37 @@ une note et une photo. À partir de cet historique, l'intégration calcule pour
 chaque lot la perte de poids courante, la vitesse de séchage et une **date de
 fin estimée (ETA)**.
 
+**Modèle d'ETA.** Avec deux pesées, l'ETA prolonge la droite de la vitesse de
+séchage. À partir de trois pesées, un modèle de séchage exponentiel
+(`perte = L0 + A·(1 − e^(−k·t))`) est ajusté et utilisé dès qu'il explique les
+pesées au moins aussi bien que la droite et que la cible reste sous son
+asymptote : le séchage ralentit à mesure que le produit sèche, l'ETA
+exponentielle tombe donc plus tard et plus juste en fin d'affinage. Le modèle
+utilisé est affiché à côté de l'ETA dans le panneau et exposé en `eta_model`
+(`linear` / `exponential`).
+
 Plusieurs lots peuvent être suivis en parallèle ; celui marqué comme
 **référence** pilote la fin de phase `weight_loss` du programme (les autres sont
 suivis pour leur courbe et leur ETA). Un lot atteignant sa cible passe
 automatiquement à « terminé » et émet un événement `batch_completed`.
+
+**Lien lot ↔ programme.** Créer un lot avec un `program_id` et
+`start_program: true` (case *Démarrer ce programme maintenant* du panneau)
+démarre ce programme, sauf si un programme tourne déjà ou est en pause. Quand
+le lot de **référence** lié au programme en cours est terminé ou archivé (à la
+main ou en atteignant sa cible) et qu'aucun autre lot actif ne partage ce
+programme, le programme se termine comme si sa dernière phase avait fini et sa
+politique `on_complete` s'applique.
+
+**Journal.** Chaque lot tient un journal d'entrées datées avec un type (`note`,
+`salting`, `hung`, `turned`, `washed`, `tasting`, `other` ou tout texte court)
+et une note : services `add_batch_event` / `delete_batch_event`, websocket
+`batch/event/add` / `batch/event/delete`, événement de bus `batch_event`, et
+carte *Journal* dans le panneau. `export_batch` (service avec réponse,
+websocket `batch/export`) renvoie la fiche complète — lot, pesées, journal,
+valeurs dérivées et programme utilisé ; les boutons **Exporter JSON** /
+**Exporter CSV** du panneau la téléchargent (le CSV fusionne pesées et journal
+en une seule chronologie).
 
 ```yaml
 # Créer un lot (le premier devient automatiquement la référence)
@@ -675,7 +746,8 @@ uniquement aux utilisateurs connectés via `/api/curing_chamber/photo/…` (le
 panneau et la carte signent l'URL avant affichage). Les photos enregistrées par
 les versions précédentes dans le dossier public `www/` y sont déplacées
 automatiquement au démarrage. Autres services de lot : `set_reference_batch`,
-`complete_batch`, `archive_batch`, `delete_batch`.
+`complete_batch`, `archive_batch`, `delete_batch`, `add_batch_event`,
+`delete_batch_event`, `export_batch`.
 
 **Saisir un poids depuis l'interface.** Chaque enceinte expose une entité
 `number` **Poids manuel** (`number.<enceinte>_manual_weight`). Saisissez une
@@ -701,15 +773,16 @@ Assistant Container — ni add-on, ni ingress). Il est accessible à tous les
 utilisateurs, pas seulement aux administrateurs, et suit le thème actif. Quatre
 vues :
 
-1. **Chambre** — jauges T° / HR / point de rosée avec consignes, état et heures
+1. **Chambre** — jauges T° / HR / point de rosée (et cœur du produit) avec consignes, état et heures
    de marche des actionneurs, programme en cours avec sa frise de phases
    (démarrer / pause / phase suivante / stop), consignes manuelles,
    interrupteurs régulation et maintenance, alertes actives avec l'action
    manuelle recommandée, dernières décisions de régulation.
 2. **Lots** — lots actifs et terminés, courbe de séchage avec la cible et la
-   projection d'ETA, historique des pesées (supprimables), galerie photo
-   chronologique, formulaire de pesée avec prise de photo directe (les photos
-   sont réduites dans le navigateur), créer / référence / terminer / archiver /
+   projection d'ETA, historique des pesées (supprimables), journal, galerie
+   photo chronologique, formulaire de pesée avec prise de photo directe (les
+   photos sont réduites dans le navigateur), export JSON / CSV, créer (avec
+   démarrage optionnel du programme) / référence / terminer / archiver /
    supprimer.
 3. **Programmes** — éditeur visuel de programmes multi-phases : dupliquer un
    preset, éditer les phases (consignes, rampe optionnelle, condition de fin,
@@ -762,6 +835,4 @@ vit dans trois paquets **purs** (`regulation/`, `program/`, `batch/`) sans impor
 Assistant. La CI exécute ruff, mypy, pytest+couverture, hassfest et la
 validation HACS sous Python 3.13.
 
-Roadmap : régulation PID, exploitation de la sonde de température à cœur, et un
-modèle de courbe de séchage exponentiel (plutôt
-que linéaire) pour affiner l'ETA en fin d'affinage.
+Roadmap : régulation PID.

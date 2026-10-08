@@ -627,6 +627,19 @@ class RegulationEngine:
             self._params(inputs.temp, config.high_temp_drying_limit),
         )
 
+        # Product core too warm (whatever the phase): bacterial growth risk.
+        core_high = inputs.product_temp is not None and inputs.product_temp > config.core_temp_max
+        self._handle(
+            out,
+            AlertKey.CORE_TEMP_HIGH,
+            AlertLevel.CRITICAL,
+            core_high,
+            now,
+            config.high_temp_drying_duration,
+            config.degraded_reminder,
+            self._params(inputs.product_temp, config.core_temp_max),
+        )
+
         # Case hardening: humidity durably below band, or drying too fast.
         hardening = False
         if (

@@ -36,6 +36,7 @@ _ABS_KEYS = {
     "abs_limit_humidity_high",
     "abs_limit_humidity_low",
     "high_temp_drying",
+    "core_temp_high",
 }
 _FAULT_KEYS = {"sensor_fault_temp", "sensor_fault_humidity"}
 _DIVERGENCE_KEYS = {"sensor_divergence_temp", "sensor_divergence_humidity"}

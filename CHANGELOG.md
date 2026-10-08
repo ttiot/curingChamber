@@ -6,6 +6,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-08
+
+### Added
+- **Exponential ETA.** From three weigh-ins the batch ETA uses an exponential
+  drying model (`loss = L0 + A·(1 − e^(−k·t))`, grid search on `k`) whenever it
+  fits the weigh-ins at least as well as the straight line and the target lies
+  below its asymptote; otherwise the linear extrapolation remains. Batch
+  summaries carry `eta_model` and the panel shows it next to the ETA.
+- **Product core probe.** New *Core temperature delta* sensor (core minus
+  chamber air, with a core probe), critical `core_temp_high` alert when the core
+  stays above the new `core_temp_max` option (default 24 °C) for the high-temp
+  duration, core gauge in the panel, and a new phase end kind `core_temp`
+  (`core_temp_target`: the phase ends when the core crosses the target from
+  where it started; `duration_hours` is the cap / no-probe fallback).
+- **Batch journal and export.** Dated entries with a kind (note, salting,
+  hung, turned, washed, tasting, other…) and a note: `add_batch_event` /
+  `delete_batch_event` services, `batch/event/add` / `batch/event/delete`
+  websocket commands, `batch_event` bus event and a *Journal* card in the
+  panel. `export_batch` service (response) and `batch/export` websocket return
+  the full record (batch, weigh-ins, journal, derived figures, program); the
+  panel offers **Export JSON** and **Export CSV** (one timeline of weigh-ins
+  and journal entries).
+- **Batch ↔ program link.** `create_batch` / `batch/create` accept
+  `start_program` (panel box *Start this program now*): the linked program
+  starts unless one is already running or paused. Completing or archiving the
+  reference batch linked to the running program (by hand or on reaching its
+  target), with no other active batch on that program, ends the program and
+  applies its `on_complete` policy. The program engine gains `complete()`.
+
+### Changed
+- Program validation takes the core probe into account (`has_core_probe`):
+  a `core_temp` phase without probe needs `duration_hours` and warns.
+- Websocket `chambers` entries carry `has_core_probe`; `state` carries
+  `core_temp`, `core_delta`, `has_core_probe` and `has_scale`.
+
 ## [0.5.0] - 2026-10-08
 
 ### Added
@@ -141,7 +176,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ttiot/curingChamber/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ttiot/curingChamber/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ttiot/curingChamber/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ttiot/curingChamber/compare/v0.3.0...v0.3.1

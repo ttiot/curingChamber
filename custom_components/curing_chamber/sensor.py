@@ -136,6 +136,19 @@ SENSORS: tuple[CuringSensorDescription, ...] = (
 )
 
 
+#: Product core minus chamber air temperature; only when a core probe exists.
+CORE_DELTA_SENSOR = CuringSensorDescription(
+    key="core_delta",
+    translation_key="core_delta",
+    device_class=SensorDeviceClass.TEMPERATURE,
+    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+    state_class=SensorStateClass.MEASUREMENT,
+    suggested_display_precision=1,
+    value_fn=lambda d: d.get("core_delta"),
+    attrs_fn=lambda d: {"core_temp": d.get("core_temp"), "chamber_temp": d.get("temp")},
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -155,6 +168,8 @@ async def async_setup_entry(
         if conf.get(entry, key):
             entities.append(CuringChamberRuntimeSensor(coordinator, actuator))
     entities.append(CuringChamberDegradedHoursSensor(coordinator))
+    if conf.get(entry, conf.CONF_PRODUCT_TEMP_SENSOR):
+        entities.append(CuringChamberSensor(coordinator, CORE_DELTA_SENSOR))
     async_add_entities(entities)
 
 

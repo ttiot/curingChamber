@@ -48,9 +48,41 @@ class WeightSample:
         )
 
 
+#: Suggested journal event kinds (the UI offers them; any short text is accepted).
+EVENT_KINDS: tuple[str, ...] = (
+    "note",
+    "salting",
+    "hung",
+    "turned",
+    "washed",
+    "tasting",
+    "other",
+)
+
+
+@dataclass(frozen=True)
+class BatchEvent:
+    """A journal entry: something done to or observed on the batch."""
+
+    timestamp: float
+    kind: str
+    note: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {"timestamp": self.timestamp, "kind": self.kind, "note": self.note}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> BatchEvent:
+        return cls(
+            timestamp=float(_req_float(data.get("timestamp"))),
+            kind=str(data.get("kind") or "note"),
+            note=_opt_str(data.get("note")),
+        )
+
+
 @dataclass
 class Batch:
-    """A product being cured, with its weigh-in history (mutable, persisted)."""
+    """A product being cured, with its weigh-in history and journal (mutable, persisted)."""
 
     id: str
     name: str
@@ -61,6 +93,7 @@ class Batch:
     created_at: float = 0.0
     status: BatchStatus = BatchStatus.ACTIVE
     samples: list[WeightSample] = field(default_factory=list)
+    events: list[BatchEvent] = field(default_factory=list)
 
     @property
     def latest_sample(self) -> WeightSample | None:
@@ -91,6 +124,11 @@ class Batch:
         self.samples.append(sample)
         self.samples.sort(key=lambda s: s.timestamp)
 
+    def add_event(self, event: BatchEvent) -> None:
+        """Insert a journal entry, keeping ``events`` sorted by timestamp."""
+        self.events.append(event)
+        self.events.sort(key=lambda e: e.timestamp)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -102,6 +140,7 @@ class Batch:
             "created_at": self.created_at,
             "status": self.status.value,
             "samples": [s.to_dict() for s in self.samples],
+            "events": [e.to_dict() for e in self.events],
         }
 
     @classmethod
@@ -110,6 +149,10 @@ class Batch:
         samples_iter = raw_samples if isinstance(raw_samples, list) else []
         samples = [WeightSample.from_dict(_as_mapping(s)) for s in samples_iter]
         samples.sort(key=lambda s: s.timestamp)
+        raw_events = data.get("events", [])
+        events_iter = raw_events if isinstance(raw_events, list) else []
+        events = [BatchEvent.from_dict(_as_mapping(e)) for e in events_iter]
+        events.sort(key=lambda e: e.timestamp)
         return cls(
             id=str(data["id"]),
             name=str(data["name"]),
@@ -120,6 +163,7 @@ class Batch:
             created_at=_opt_float(data.get("created_at")) or 0.0,
             status=BatchStatus(str(data.get("status", "active"))),
             samples=samples,
+            events=events,
         )
 
 

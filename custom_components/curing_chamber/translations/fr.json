@@ -104,6 +104,7 @@
           "temp_abs_max": "Température maximale absolue (°C)",
           "humidity_abs_min": "Hygrométrie minimale absolue (%HR)",
           "humidity_abs_max": "Hygrométrie maximale absolue (%HR)",
+          "core_temp_max": "Température maximale à cœur du produit (°C)",
           "condensation_margin": "Marge d'alerte condensation au-dessus du point de rosée (°C)",
           "degraded_delay": "Délai d'entrée en mode dégradé (s)",
           "degraded_reminder": "Intervalle de rappel des alertes (s)",
@@ -176,6 +177,9 @@
       },
       "degraded_hours": {
         "name": "Heures en mode dégradé"
+      },
+      "core_delta": {
+        "name": "Écart température à cœur"
       }
     },
     "binary_sensor": {

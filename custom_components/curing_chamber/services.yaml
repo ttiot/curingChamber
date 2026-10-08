@@ -240,6 +240,85 @@ create_batch:
       description: Make this the reference batch driving the program.
       selector:
         boolean:
+    start_program:
+      name: Start the program
+      description: >-
+        Start the linked program right away (ignored when a program is already
+        running or paused).
+      default: false
+      selector:
+        boolean:
+
+add_batch_event:
+  name: Add journal entry
+  description: >-
+    Record something done to or observed on a batch (salting, hanging,
+    turning, washing, tasting, note…).
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      required: true
+      selector:
+        text:
+    kind:
+      name: Kind
+      description: "Suggested kinds: note, salting, hung, turned, washed, tasting, other."
+      required: true
+      example: turned
+      selector:
+        text:
+    note:
+      name: Note
+      selector:
+        text:
+    timestamp:
+      name: Date/time
+      description: When it happened (defaults to now).
+      selector:
+        datetime:
+
+delete_batch_event:
+  name: Delete journal entry
+  description: Remove one journal entry, identified by its timestamp.
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      required: true
+      selector:
+        text:
+    timestamp:
+      name: Date/time
+      required: true
+      selector:
+        datetime:
+
+export_batch:
+  name: Export batch
+  description: >-
+    Return the full record of a batch (weigh-ins, journal, derived figures and
+    the program used) as a JSON payload (returns a response; use
+    `response_variable`).
+  fields:
+    device_id:
+      name: Chamber
+      selector:
+        device:
+          integration: curing_chamber
+    batch_id:
+      name: Batch id
+      required: true
+      selector:
+        text:
 
 record_weight:
   name: Record weigh-in

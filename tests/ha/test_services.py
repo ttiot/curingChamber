@@ -12,11 +12,16 @@ from custom_components.curing_chamber.const import (
     CONF_DEGRADED_DELAY,
     CONF_HUMIDITY_SENSOR,
     CONF_NAME,
+    CONF_PRODUCT_TEMP_SENSOR,
     CONF_STARTUP_DELAY,
     CONF_TEMP_SENSOR,
     DOMAIN,
+    SERVICE_ADD_BATCH_EVENT,
+    SERVICE_COMPLETE_BATCH,
     SERVICE_CREATE_BATCH,
     SERVICE_DELETE_BATCH,
+    SERVICE_DELETE_BATCH_EVENT,
+    SERVICE_EXPORT_BATCH,
     SERVICE_EXPORT_PROGRAMS,
     SERVICE_IMPORT_PROGRAMS,
     SERVICE_NEXT_PHASE,
@@ -363,3 +368,120 @@ async def test_degraded_hours_counter(hass: HomeAssistant, seed_states) -> None:
     assert state is not None
     assert float(state.state) > 0.0
     assert state.attributes["state_class"] == "total_increasing"
+
+
+async def test_batch_starts_and_completes_its_program(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    await _create_batch(hass, program_id="lonzo", start_program=True)
+    assert coordinator.program.status.value == "running"
+    assert coordinator.program.state.program_id == "lonzo"
+    batch_id = next(iter(coordinator.batches))
+
+    # A second batch on the same program does not restart or disturb it.
+    await _create_batch(hass, name="Coppa #2", program_id="coppa", start_program=True)
+    assert coordinator.program.state.program_id == "lonzo"
+
+    # Completing the reference batch ends the program (hold_last keeps targets).
+    await hass.services.async_call(
+        DOMAIN, SERVICE_COMPLETE_BATCH, {"batch_id": batch_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert coordinator.program.status.value == "completed"
+    await coordinator.async_refresh()
+    assert coordinator.data["target_temp"] == 13.0  # last phase targets held
+
+
+async def test_batch_reaching_target_completes_program(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    await _create_batch(hass, program_id="lonzo", start_program=True, target_loss_pct=10.0)
+    batch_id = next(iter(coordinator.batches))
+    await hass.services.async_call(
+        DOMAIN, SERVICE_RECORD_WEIGHT, {"batch_id": batch_id, "weight": 890.0}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert coordinator.batches[batch_id].status.value == "completed"
+    assert coordinator.program.status.value == "completed"
+
+
+async def test_batch_journal_services(hass: HomeAssistant, config_entry, seed_states) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    await _create_batch(hass, program_id="coppa")
+    batch_id = next(iter(coordinator.batches))
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ADD_BATCH_EVENT,
+        {
+            "batch_id": batch_id,
+            "kind": "salting",
+            "note": "2.8 %",
+            "timestamp": "2026-10-01T10:00:00+00:00",
+        },
+        blocking=True,
+    )
+    await hass.services.async_call(
+        DOMAIN, SERVICE_ADD_BATCH_EVENT, {"batch_id": batch_id, "kind": "turned"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    batch = coordinator.batches[batch_id]
+    assert [e.kind for e in batch.events] == ["salting", "turned"]
+    assert batch.events[0].note == "2.8 %"
+
+    export = await hass.services.async_call(
+        DOMAIN, SERVICE_EXPORT_BATCH, {"batch_id": batch_id}, blocking=True, return_response=True
+    )
+    assert export["format"] == "curing_chamber/batch"
+    assert export["program"]["id"] == "coppa"
+    assert export["summary"]["event_count"] == 2
+    assert export["batch"]["events"][1]["kind"] == "turned"
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_DELETE_BATCH_EVENT,
+        {"batch_id": batch_id, "timestamp": "2026-10-01T10:00:00+00:00"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert [e.kind for e in coordinator.batches[batch_id].events] == ["turned"]
+
+    with pytest.raises(HomeAssistantError, match="Unknown batch"):
+        await hass.services.async_call(
+            DOMAIN, SERVICE_ADD_BATCH_EVENT, {"batch_id": "nope", "kind": "x"}, blocking=True
+        )
+    with pytest.raises(HomeAssistantError, match="Unknown batch"):
+        await hass.services.async_call(
+            DOMAIN, SERVICE_EXPORT_BATCH, {"batch_id": "nope"}, blocking=True, return_response=True
+        )
+
+
+async def test_core_probe_delta_sensor_and_alert(hass: HomeAssistant, seed_states) -> None:
+    core_entity = "sensor.chamber_core"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Core",
+        data={
+            CONF_NAME: "Core",
+            CONF_TEMP_SENSOR: TEMP_ENTITY,
+            CONF_HUMIDITY_SENSOR: HUMIDITY_ENTITY,
+            CONF_PRODUCT_TEMP_SENSOR: core_entity,
+        },
+        options={"high_temp_drying_duration": 0, CONF_STARTUP_DELAY: 0},
+    )
+    hass.states.async_set(core_entity, "15.5", {"unit_of_measurement": "°C"})
+    coordinator = await _setup(hass, entry, seed_states)
+    assert coordinator.has_core_probe
+    state = hass.states.get("sensor.core_core_temperature_delta")
+    assert state is not None
+    assert float(state.state) == 2.5
+    assert state.attributes["core_temp"] == 15.5
+    assert coordinator.chamber_state()["core_temp"] == 15.5
+
+    hass.states.async_set(core_entity, "26", {"unit_of_measurement": "°C"})
+    await coordinator.async_refresh()
+    assert "core_temp_high" in coordinator.data["active_alerts"]
+    alarm = hass.states.get("binary_sensor.core_out_of_range_alarm")
+    assert alarm is not None
+    assert alarm.state == "on"
