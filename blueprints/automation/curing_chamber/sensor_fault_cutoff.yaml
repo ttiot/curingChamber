@@ -1,0 +1,58 @@
+blueprint:
+  name: Curing Chamber — cut power on sensor fault
+  description: >-
+    When the chamber's *Sensor fault* binary sensor turns on (a probe is
+    unavailable or frozen), switch off extra devices the integration does not
+    drive itself (a smart plug feeding the whole fridge, a lamp, a pump…) and
+    send a notification. The integration already stops its own actuators.
+  domain: automation
+  source_url: https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/sensor_fault_cutoff.yaml
+  input:
+    fault_sensor:
+      name: Sensor fault binary sensor
+      selector:
+        entity:
+          domain: binary_sensor
+          integration: curing_chamber
+    cut_entities:
+      name: Entities to switch off
+      selector:
+        target:
+          entity:
+            domain:
+              - switch
+              - input_boolean
+              - light
+              - fan
+    notify_service:
+      name: Notify service (optional)
+      description: e.g. `notify.mobile_app_my_phone`; leave empty for none.
+      default: ""
+      selector:
+        text:
+
+mode: single
+
+variables:
+  notify_target: !input notify_service
+
+trigger:
+  - platform: state
+    entity_id: !input fault_sensor
+    to: "on"
+    for:
+      minutes: 1
+
+action:
+  - service: homeassistant.turn_off
+    target: !input cut_entities
+  - if:
+      - condition: template
+        value_template: "{{ notify_target | length > 0 }}"
+    then:
+      - service: "{{ notify_target }}"
+        data:
+          title: Curing chamber
+          message: >-
+            Sensor fault on {{ state_attr(trigger.entity_id, 'friendly_name') }}:
+            extra devices switched off.

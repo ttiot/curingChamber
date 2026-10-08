@@ -232,15 +232,50 @@ async def ws_batch_event_delete(
     _send_batch(connection, msg, coordinator)
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/batch/export", **_BATCH})
-@callback
-def ws_batch_export(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/batch/export",
+        **_BATCH,
+        vol.Optional("include_photos", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_batch_export(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
     if (coordinator := _coordinator(hass, connection, msg)) is None:
         return
     try:
-        connection.send_result(msg["id"], coordinator.export_batch(msg["batch_id"]))
+        payload = await coordinator.async_export_batch(
+            msg["batch_id"], include_photos=msg["include_photos"]
+        )
     except ValueError as err:
         connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, str(err))
+        return
+    connection.send_result(msg["id"], payload)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/batch/import",
+        **_ENTRY,
+        vol.Required("batch"): dict,
+        vol.Optional("overwrite", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_batch_import(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Create a batch from an export payload (photos embedded as photo_data)."""
+    if (coordinator := _coordinator(hass, connection, msg)) is None:
+        return
+    try:
+        batch = await coordinator.async_import_batch(msg["batch"], overwrite=msg["overwrite"])
+    except ValueError as err:
+        connection.send_error(msg["id"], websocket_api.ERR_INVALID_FORMAT, str(err))
+        return
+    connection.send_result(msg["id"], coordinator.batch_summary(batch.id))
 
 
 @websocket_api.websocket_command(
@@ -465,6 +500,7 @@ _COMMANDS = (
     ws_batch_event_add,
     ws_batch_event_delete,
     ws_batch_export,
+    ws_batch_import,
     ws_weigh_in,
     ws_weigh_in_delete,
     ws_programs,

@@ -34,7 +34,8 @@
         "title": "Curing Chamber — notifications",
         "description": "Optionally pick notify services (e.g. mobile app) for alerts. Persistent notifications are always created.",
         "data": {
-          "notify_services": "Notify services"
+          "notify_services": "Notify services",
+          "weigh_in_reminder_days": "Weigh-in reminder after N days without weigh-in (0 = off)"
         }
       },
       "food_safety": {
@@ -54,7 +55,8 @@
           "sensors": "Sensors",
           "actuators": "Actuators",
           "regulation": "Regulation & safety",
-          "notifications": "Notifications"
+          "notifications": "Notifications",
+          "batches": "Batches & housekeeping"
         }
       },
       "sensors": {
@@ -84,7 +86,8 @@
       "notifications": {
         "title": "Notifications",
         "data": {
-          "notify_services": "Notify services"
+          "notify_services": "Notify services",
+          "weigh_in_reminder_days": "Weigh-in reminder after N days without weigh-in (0 = off)"
         }
       },
       "regulation": {
@@ -104,6 +107,7 @@
           "temp_abs_max": "Absolute maximum temperature (°C)",
           "humidity_abs_min": "Absolute minimum humidity (%RH)",
           "humidity_abs_max": "Absolute maximum humidity (%RH)",
+          "actuator_ineffective_minutes": "Ineffective-actuator detection delay (min, 0 = off)",
           "core_temp_max": "Product core maximum temperature (°C)",
           "condensation_margin": "Condensation alert margin above dew point (°C)",
           "degraded_delay": "Degraded-mode onset delay (s)",
@@ -111,6 +115,14 @@
           "door_open_alert_minutes": "Door-open alert delay (min)",
           "sensor_stale_minutes": "Frozen-sensor timeout (min)",
           "tick_interval": "Control interval (s)"
+        }
+      },
+      "batches": {
+        "title": "Batches & housekeeping",
+        "description": "Keep the batch list and photo storage light. 0 disables each rule.",
+        "data": {
+          "auto_archive_days": "Auto-archive completed batches after N days (0 = off)",
+          "purge_photos_days": "Delete photos of archived batches after N days (0 = off)"
         }
       }
     }
@@ -197,6 +209,9 @@
       },
       "door_open_too_long": {
         "name": "Door open too long"
+      },
+      "actuator_ineffective": {
+        "name": "Actuator ineffective"
       }
     },
     "switch": {

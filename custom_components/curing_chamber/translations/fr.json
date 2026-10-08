@@ -34,7 +34,8 @@
         "title": "Séchoir — notifications",
         "description": "Choisissez éventuellement des services de notification (ex. application mobile) pour les alertes. Des notifications persistantes sont toujours créées.",
         "data": {
-          "notify_services": "Services de notification"
+          "notify_services": "Services de notification",
+          "weigh_in_reminder_days": "Rappel de pesée après N jours sans pesée (0 = off)"
         }
       },
       "food_safety": {
@@ -54,7 +55,8 @@
           "sensors": "Capteurs",
           "actuators": "Actionneurs",
           "regulation": "Régulation & sécurité",
-          "notifications": "Notifications"
+          "notifications": "Notifications",
+          "batches": "Lots & nettoyage"
         }
       },
       "sensors": {
@@ -84,7 +86,8 @@
       "notifications": {
         "title": "Notifications",
         "data": {
-          "notify_services": "Services de notification"
+          "notify_services": "Services de notification",
+          "weigh_in_reminder_days": "Rappel de pesée après N jours sans pesée (0 = off)"
         }
       },
       "regulation": {
@@ -104,6 +107,7 @@
           "temp_abs_max": "Température maximale absolue (°C)",
           "humidity_abs_min": "Hygrométrie minimale absolue (%HR)",
           "humidity_abs_max": "Hygrométrie maximale absolue (%HR)",
+          "actuator_ineffective_minutes": "Délai de détection d'actionneur inefficace (min, 0 = off)",
           "core_temp_max": "Température maximale à cœur du produit (°C)",
           "condensation_margin": "Marge d'alerte condensation au-dessus du point de rosée (°C)",
           "degraded_delay": "Délai d'entrée en mode dégradé (s)",
@@ -111,6 +115,14 @@
           "door_open_alert_minutes": "Délai d'alerte porte ouverte (min)",
           "sensor_stale_minutes": "Délai capteur figé (min)",
           "tick_interval": "Intervalle de régulation (s)"
+        }
+      },
+      "batches": {
+        "title": "Lots & nettoyage",
+        "description": "Garder la liste des lots et le stockage des photos légers. 0 désactive chaque règle.",
+        "data": {
+          "auto_archive_days": "Archiver automatiquement les lots terminés après N jours (0 = off)",
+          "purge_photos_days": "Supprimer les photos des lots archivés après N jours (0 = off)"
         }
       }
     }
@@ -197,6 +209,9 @@
       },
       "door_open_too_long": {
         "name": "Porte ouverte trop longtemps"
+      },
+      "actuator_ineffective": {
+        "name": "Actionneur inefficace"
       }
     },
     "switch": {

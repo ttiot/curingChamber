@@ -17,6 +17,8 @@ from .types import (
     ProgramEventType,
     ProgramState,
     ProgramStatus,
+    Reminder,
+    ReminderDue,
 )
 
 __all__ = [
@@ -31,6 +33,8 @@ __all__ = [
     "ProgramEventType",
     "ProgramState",
     "ProgramStatus",
+    "Reminder",
+    "ReminderDue",
     "preset_by_id",
     "presets_for",
 ]

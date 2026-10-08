@@ -6,7 +6,8 @@
  * (sensor.<chamber>_active_batches) whose `batches` attribute carries a light
  * per-batch summary (name, status, loss %, drying rate, ETA, latest photo) and
  * fetches the weigh-in history over the integration's websocket API
- * (`curing_chamber/batches`). It renders a drying curve, a loss gauge and an
+ * (`curing_chamber/batches`). It renders a drying curve, a loss gauge, the
+ * last journal entry with a one-tap "Turned" button, and an
  * inline form to record a new weigh-in (weight + optional photo, downscaled
  * in the browser) that works with or without a scale. Photos are private:
  * their URLs are signed through `auth/sign_path` before being displayed.
@@ -108,6 +109,7 @@ class CuringChamberCard extends HTMLElement {
               <span>Rate <b>${rate}</b></span>
               <span>ETA <b>${eta}</b></span>
             </div>
+            ${this._journal(b)}
           </div>
         </div>
       </div>`;
@@ -289,6 +291,11 @@ class CuringChamberCard extends HTMLElement {
         .bar-fill { height: 100%; background: var(--primary-color); }
         .row { display: flex; gap: 14px; flex-wrap: wrap; font-size: .85em; color: var(--secondary-text-color); }
         .row b { color: var(--primary-text-color); font-weight: 500; }
+        .journal { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px;
+          font-size: .8em; color: var(--secondary-text-color); }
+        .journal button { padding: 2px 8px; border: 1px solid var(--primary-color); border-radius: 10px;
+          background: transparent; color: var(--primary-color); cursor: pointer; font-size: 1em; }
+        .journal button:hover { background: var(--primary-color); color: var(--text-primary-color, #fff); }
         .form { border-top: 1px solid var(--divider-color); padding: 10px 16px 14px;
           display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .form select, .form input[type=number] { padding: 6px; border-radius: 6px;
@@ -318,6 +325,46 @@ class CuringChamberCard extends HTMLElement {
     this._photo = card.querySelector(".cc-photo");
     this._status = card.querySelector(".form-status");
     card.querySelector(".cc-submit").addEventListener("click", () => this._submit());
+    this._body.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-journal]");
+      if (btn) this._quickEvent(btn.getAttribute("data-batch"), btn.getAttribute("data-journal"), btn);
+    });
+  }
+
+  /** One-tap journal entry (e.g. "turned") from the card. */
+  async _quickEvent(batchId, kind, btn) {
+    if (!this._entryId || !batchId) return;
+    btn.disabled = true;
+    try {
+      await this._hass.callWS({
+        type: "curing_chamber/batch/event/add",
+        entry_id: this._entryId,
+        batch_id: batchId,
+        kind,
+      });
+      this._status.textContent = "Journal entry recorded.";
+    } catch (err) {
+      this._status.textContent = `Error: ${(err && err.message) || err}`;
+      btn.disabled = false;
+    }
+  }
+
+  _ago(ts) {
+    if (ts == null) return "";
+    const days = Math.floor((Date.now() / 1000 - ts) / 86400);
+    if (days <= 0) return "today";
+    return days === 1 ? "1 day ago" : `${days} days ago`;
+  }
+
+  _journal(b) {
+    const last = b.last_event
+      ? `Last: <b>${this._escape(b.last_event.kind)}</b> ${this._escape(this._ago(b.last_event.timestamp))}` +
+        (b.last_event.note ? ` — ${this._escape(b.last_event.note)}` : "")
+      : "No journal entry yet";
+    const button = b.status === "active"
+      ? `<button type="button" data-journal="turned" data-batch="${this._escape(b.id)}">Turned</button>`
+      : "";
+    return `<div class="journal"><span>${last}</span>${button}</div>`;
   }
 
   _escape(text) {

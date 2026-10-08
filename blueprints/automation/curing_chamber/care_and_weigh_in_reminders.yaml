@@ -1,0 +1,56 @@
+blueprint:
+  name: Curing Chamber — care and weigh-in reminders
+  description: >-
+    Forward the integration's `reminder` (turn, wash, taste… from the
+    program's care reminders) and `weigh_in_due` bus events to a notify
+    service, for example to reach a phone that has no persistent-notification
+    mirror. Optionally add a journal entry automatically when the reminder is
+    acknowledged by an actionable notification.
+  domain: automation
+  source_url: https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/care_and_weigh_in_reminders.yaml
+  input:
+    notify_service:
+      name: Notify service
+      description: e.g. `notify.mobile_app_my_phone`.
+      selector:
+        text:
+    entry_id:
+      name: Chamber entry id (optional)
+      description: Leave empty to react to every chamber.
+      default: ""
+      selector:
+        text:
+
+mode: queued
+max: 10
+
+variables:
+  entry_filter: !input entry_id
+
+trigger:
+  - platform: event
+    event_type: curing_chamber_event
+    event_data:
+      type: reminder
+    id: reminder
+  - platform: event
+    event_type: curing_chamber_event
+    event_data:
+      type: weigh_in_due
+    id: weigh_in
+
+condition:
+  - condition: template
+    value_template: "{{ not entry_filter or trigger.event.data.entry_id == entry_filter }}"
+
+action:
+  - service: !input notify_service
+    data:
+      title: Curing chamber
+      message: >-
+        {% if trigger.id == 'reminder' %}
+          {{ trigger.event.data.program }} ({{ trigger.event.data.phase }}):
+          {{ trigger.event.data.kind }}{% if trigger.event.data.note %} — {{ trigger.event.data.note }}{% endif %}.
+        {% else %}
+          {{ trigger.event.data.name }}: no weigh-in for {{ trigger.event.data.days }} days.
+        {% endif %}

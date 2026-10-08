@@ -8,14 +8,18 @@ import os
 import pytest
 from custom_components.curing_chamber.const import (
     CHAMBER_KIND_CHEESE,
+    CONF_AUTO_ARCHIVE_DAYS,
     CONF_CHAMBER_KIND,
     CONF_DEGRADED_DELAY,
     CONF_HUMIDITY_SENSOR,
     CONF_NAME,
     CONF_PRODUCT_TEMP_SENSOR,
+    CONF_PURGE_PHOTOS_DAYS,
     CONF_STARTUP_DELAY,
     CONF_TEMP_SENSOR,
+    CONF_WEIGH_IN_REMINDER_DAYS,
     DOMAIN,
+    EVENT_CURING_CHAMBER,
     SERVICE_ADD_BATCH_EVENT,
     SERVICE_COMPLETE_BATCH,
     SERVICE_CREATE_BATCH,
@@ -23,6 +27,7 @@ from custom_components.curing_chamber.const import (
     SERVICE_DELETE_BATCH_EVENT,
     SERVICE_EXPORT_BATCH,
     SERVICE_EXPORT_PROGRAMS,
+    SERVICE_IMPORT_BATCH,
     SERVICE_IMPORT_PROGRAMS,
     SERVICE_NEXT_PHASE,
     SERVICE_RECORD_WEIGHT,
@@ -485,3 +490,166 @@ async def test_core_probe_delta_sensor_and_alert(hass: HomeAssistant, seed_state
     alarm = hass.states.get("binary_sensor.core_out_of_range_alarm")
     assert alarm is not None
     assert alarm.state == "on"
+
+
+async def test_weigh_in_reminder(hass: HomeAssistant, seed_states) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Rem",
+        data={
+            CONF_NAME: "Rem",
+            CONF_TEMP_SENSOR: TEMP_ENTITY,
+            CONF_HUMIDITY_SENSOR: HUMIDITY_ENTITY,
+        },
+        options={CONF_WEIGH_IN_REMINDER_DAYS: 3},
+    )
+    coordinator = await _setup(hass, entry, seed_states)
+    events: list[dict] = []
+    hass.bus.async_listen(
+        EVENT_CURING_CHAMBER,
+        lambda e: events.append(e.data) if e.data.get("type") == "weigh_in_due" else None,
+    )
+    await _create_batch(hass)
+    batch_id = next(iter(coordinator.batches))
+    batch = coordinator.batches[batch_id]
+    assert not coordinator.data["batches"][0]["weigh_in_due"]
+
+    # Four days without a weigh-in: due, one notification, one event.
+    batch.created_at -= 4 * 86400
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.data["batches"][0]["weigh_in_due"]
+    assert coordinator.data["weigh_in_due"] == [batch_id]
+    assert len(events) == 1
+    assert events[0]["days"] == 4
+    notif_id = f"{DOMAIN}_{entry.entry_id}_weigh_in_{batch_id}"
+    assert notif_id in hass.data["persistent_notification"]
+    sensor = hass.states.get("sensor.rem_active_batches")
+    assert sensor is not None
+    assert sensor.attributes["weigh_in_due"] == [batch_id]
+
+    # Still due on the next tick, but not re-notified within the interval.
+    await coordinator.async_refresh()
+    assert len(events) == 1
+
+    # A weigh-in clears the reminder and dismisses the notification.
+    await hass.services.async_call(
+        DOMAIN, SERVICE_RECORD_WEIGHT, {"batch_id": batch_id, "weight": 990.0}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert not coordinator.data["batches"][0]["weigh_in_due"]
+    assert notif_id not in hass.data["persistent_notification"]
+    assert batch_id not in coordinator.store.weigh_in_reminders
+
+
+async def test_program_reminder_notifies_and_fires_event(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    events: list[dict] = []
+    hass.bus.async_listen(
+        EVENT_CURING_CHAMBER,
+        lambda e: events.append(e.data) if e.data.get("type") == "reminder" else None,
+    )
+    await _create_batch(hass, program_id="cheese_washed", start_program=True)
+    batch_id = next(iter(coordinator.batches))
+    await hass.services.async_call(DOMAIN, SERVICE_NEXT_PHASE, {}, blocking=True)
+    await hass.async_block_till_done()
+    await coordinator.async_refresh()
+    assert coordinator.data["phase_name"] == "ripening"
+    nxt = coordinator.data["next_reminder"]
+    assert nxt["kind"] == "turned"
+    assert 47 * 3600 < nxt["due_in"] <= 48 * 3600
+    assert hass.states.get("sensor.test_chamber_current_phase").attributes["next_reminder"] == nxt
+
+    # Two days into ripening: both reminders fire once.
+    coordinator.program.state.phase_started_at -= 49 * 3600
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert sorted(e["kind"] for e in events) == ["turned", "washed"]
+    assert events[0]["batch_ids"] == [batch_id]
+    assert f"{DOMAIN}_{config_entry.entry_id}_reminder_0" in hass.data["persistent_notification"]
+    await coordinator.async_refresh()
+    assert len(events) == 2
+
+
+async def test_import_batch_service(hass: HomeAssistant, config_entry, seed_states) -> None:
+    coordinator = await _setup(hass, config_entry, seed_states)
+    payload = {
+        "format": "curing_chamber/batch",
+        "version": 1,
+        "batch": {
+            "id": "moved",
+            "name": "Moved coppa",
+            "reference_weight": 1000.0,
+            "target_loss_pct": 30.0,
+            "status": "completed",
+            "samples": [
+                {"timestamp": 1000.0, "weight": 1000.0},
+                {"timestamp": 2000.0, "weight": 700.0},
+            ],
+            "events": [{"timestamp": 1500.0, "kind": "turned"}],
+        },
+    }
+    result = await hass.services.async_call(
+        DOMAIN, SERVICE_IMPORT_BATCH, {"batch": payload}, blocking=True, return_response=True
+    )
+    assert result == {"imported": ["moved"]}
+    batch = coordinator.batches["moved"]
+    assert batch.status.value == "completed"
+    assert len(batch.samples) == 2 and len(batch.events) == 1
+    # A completed batch does not become the reference.
+    assert coordinator.store.reference_batch_id is None
+    with pytest.raises(HomeAssistantError, match="Invalid batch"):
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_BATCH, {"batch": {"batch": {"id": "x"}}}, blocking=True
+        )
+
+
+async def test_housekeeping_archives_and_purges(hass: HomeAssistant, seed_states) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Hk",
+        data={
+            CONF_NAME: "Hk",
+            CONF_TEMP_SENSOR: TEMP_ENTITY,
+            CONF_HUMIDITY_SENSOR: HUMIDITY_ENTITY,
+        },
+        options={CONF_AUTO_ARCHIVE_DAYS: 10, CONF_PURGE_PHOTOS_DAYS: 30},
+    )
+    coordinator = await _setup(hass, entry, seed_states)
+    photo = base64.b64encode(b"\xff\xd8\xff\xd9").decode()
+    await _create_batch(hass)
+    batch_id = next(iter(coordinator.batches))
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RECORD_WEIGHT,
+        {"batch_id": batch_id, "weight": 900.0, "photo": photo},
+        blocking=True,
+    )
+    await hass.services.async_call(
+        DOMAIN, SERVICE_COMPLETE_BATCH, {"batch_id": batch_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+    batch = coordinator.batches[batch_id]
+    assert batch.status.value == "completed"
+    assert batch.completed_at is not None
+    photo_path = coordinator.photo_path(batch_id, batch.samples[0].photo_url.rsplit("/", 1)[-1])
+    assert os.path.isfile(photo_path)
+
+    # Completed 11 days ago → archived on the next hourly housekeeping pass.
+    batch.completed_at -= 11 * 86400
+    coordinator._last_housekeeping = 0.0
+    await coordinator.async_refresh()
+    assert batch.status.value == "archived"
+    assert batch.archived_at is not None
+    assert os.path.isfile(photo_path)  # purge not due yet
+
+    # Archived 31 days ago → photos purged, weigh-in kept.
+    batch.archived_at -= 31 * 86400
+    coordinator._last_housekeeping = 0.0
+    await coordinator.async_refresh()
+    assert not os.path.isfile(photo_path)
+    assert batch.samples[0].photo_url is None
+    assert batch.samples[0].weight == 900.0
+    assert coordinator.store.batches[batch_id]["samples"][0]["photo_url"] is None

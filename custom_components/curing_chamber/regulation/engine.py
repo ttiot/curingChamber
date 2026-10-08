@@ -10,6 +10,8 @@ from __future__ import annotations
 from . import derived, filters
 from .degraded import ConditionEvent, SustainedCondition
 from .types import (
+    DECREASING,
+    INEFFECTIVE_ALERT,
     MUTUAL_EXCLUSION,
     Actuator,
     Alert,
@@ -36,6 +38,8 @@ class RegulationEngine:
         self._last_humidity_change: float | None = None
         self._conditions: dict[AlertKey, SustainedCondition] = {}
         self._last_decisions: list[Decision] = []
+        #: Per actuator: (time it was switched on, value of its quantity then).
+        self._run_start: dict[Actuator, tuple[float, float]] = {}
 
     # -- Public API ----------------------------------------------------------
 
@@ -124,6 +128,7 @@ class RegulationEngine:
             self._regulate_fan_vent(out, inputs, config, now, decisions)
             self._degraded_mode(out, inputs, config, now)
             out.summary = self._summary(config)
+        self._ineffective_alerts(out, inputs, config, now)
 
         # Fill command map from final state for every configured actuator.
         out.commands = {a: self._state.get(a, False) for a in self._configured(config)}
@@ -681,6 +686,49 @@ class RegulationEngine:
             config.degraded_reminder,
             {},
         )
+
+    def _ineffective_alerts(
+        self,
+        out: RegulationOutputs,
+        inputs: RegulationInputs,
+        config: RegulationConfig,
+        now: float,
+    ) -> None:
+        """Report an actuator that runs for long without moving its quantity."""
+        for actuator, key in INEFFECTIVE_ALERT.items():
+            is_temp = actuator in (Actuator.COOL, Actuator.HEAT)
+            value = inputs.temp if is_temp else inputs.humidity
+            valid = inputs.temp_valid if is_temp else inputs.humidity_valid
+            running = self._state.get(actuator, False) and config.has(actuator)
+            if (
+                not running
+                or value is None
+                or not valid
+                or config.actuator_ineffective_seconds <= 0
+            ):
+                self._run_start.pop(actuator, None)
+                self._handle(
+                    out, key, AlertLevel.WARNING, False, now, 0.0, config.degraded_reminder, {}
+                )
+                continue
+            started_at, start_value = self._run_start.setdefault(actuator, (now, value))
+            progress = start_value - value if actuator in DECREASING else value - start_value
+            delta = config.ineffective_temp_delta if is_temp else config.ineffective_humidity_delta
+            stalled = now - started_at >= config.actuator_ineffective_seconds and progress < delta
+            self._handle(
+                out,
+                key,
+                AlertLevel.WARNING,
+                stalled,
+                now,
+                0.0,
+                config.degraded_reminder,
+                {
+                    "value": round(value, 1),
+                    "start": round(start_value, 1),
+                    "minutes": round((now - started_at) / 60.0),
+                },
+            )
 
     def _air_quality_alert(
         self,

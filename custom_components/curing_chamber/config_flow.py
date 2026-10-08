@@ -164,7 +164,11 @@ class CuringChamberConfigFlow(ConfigFlow, domain=DOMAIN):
                         custom_value=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
-                )
+                ),
+                vol.Optional(
+                    conf.CONF_WEIGH_IN_REMINDER_DAYS,
+                    default=float(conf.DEFAULT_WEIGH_IN_REMINDER_DAYS),
+                ): _number(0, 60, 1, "d"),
             }
         )
         return self.async_show_form(step_id="notifications", data_schema=schema)
@@ -196,8 +200,33 @@ class CuringChamberOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["sensors", "actuators", "regulation", "notifications"],
+            menu_options=["sensors", "actuators", "regulation", "notifications", "batches"],
         )
+
+    async def async_step_batches(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Housekeeping of finished batches (auto-archive, photo purge)."""
+        if user_input is not None:
+            return self._save(user_input)
+        m = self._merged()
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    conf.CONF_AUTO_ARCHIVE_DAYS,
+                    default=float(
+                        m.get(conf.CONF_AUTO_ARCHIVE_DAYS, conf.DEFAULT_AUTO_ARCHIVE_DAYS)
+                    ),
+                ): _number(0, 365, 1, "d"),
+                vol.Optional(
+                    conf.CONF_PURGE_PHOTOS_DAYS,
+                    default=float(
+                        m.get(conf.CONF_PURGE_PHOTOS_DAYS, conf.DEFAULT_PURGE_PHOTOS_DAYS)
+                    ),
+                ): _number(0, 3650, 1, "d"),
+            }
+        )
+        return self.async_show_form(step_id="batches", data_schema=schema)
 
     def _merged(self) -> dict[str, Any]:
         return {**self._entry.data, **self._entry.options}
@@ -241,7 +270,15 @@ class CuringChamberOptionsFlow(OptionsFlow):
                         custom_value=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
-                )
+                ),
+                vol.Optional(
+                    conf.CONF_WEIGH_IN_REMINDER_DAYS,
+                    default=float(
+                        self._merged().get(
+                            conf.CONF_WEIGH_IN_REMINDER_DAYS, conf.DEFAULT_WEIGH_IN_REMINDER_DAYS
+                        )
+                    ),
+                ): _number(0, 60, 1, "d"),
             }
         )
         return self.async_show_form(step_id="notifications", data_schema=schema)
@@ -310,6 +347,13 @@ class CuringChamberOptionsFlow(OptionsFlow):
                     conf.CONF_HUMIDITY_ABS_MAX,
                     default=default(conf.CONF_HUMIDITY_ABS_MAX, conf.DEFAULT_HUMIDITY_ABS_MAX),
                 ): _number(0, 100, 1, "%"),
+                vol.Optional(
+                    conf.CONF_ACTUATOR_INEFFECTIVE_MINUTES,
+                    default=default(
+                        conf.CONF_ACTUATOR_INEFFECTIVE_MINUTES,
+                        conf.DEFAULT_ACTUATOR_INEFFECTIVE_MINUTES,
+                    ),
+                ): _number(0, 1440, 5, "min"),
                 vol.Optional(
                     conf.CONF_CORE_TEMP_MAX,
                     default=default(conf.CONF_CORE_TEMP_MAX, conf.DEFAULT_CORE_TEMP_MAX),

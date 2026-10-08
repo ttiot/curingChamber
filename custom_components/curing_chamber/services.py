@@ -30,6 +30,7 @@ from .const import (
     SERVICE_DELETE_PROGRAM,
     SERVICE_EXPORT_BATCH,
     SERVICE_EXPORT_PROGRAMS,
+    SERVICE_IMPORT_BATCH,
     SERVICE_IMPORT_PROGRAMS,
     SERVICE_NEXT_PHASE,
     SERVICE_PAUSE_PROGRAM,
@@ -70,6 +71,8 @@ _ATTR_PROGRAMS = "programs"
 _ATTR_OVERWRITE = "overwrite"
 _ATTR_START_PROGRAM = "start_program"
 _ATTR_KIND = "kind"
+_ATTR_INCLUDE_PHOTOS = "include_photos"
+_ATTR_BATCH = "batch"
 
 _TARGET = {vol.Optional(_ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string])}
 
@@ -103,6 +106,20 @@ _CREATE_BATCH_SCHEMA = vol.Schema(
         vol.Optional(_ATTR_TARGET_LOSS_PCT): vol.All(vol.Coerce(float), vol.Range(min=0, max=90)),
         vol.Optional(_ATTR_SET_AS_REFERENCE): cv.boolean,
         vol.Optional(_ATTR_START_PROGRAM, default=False): cv.boolean,
+    }
+)
+_EXPORT_BATCH_SCHEMA = vol.Schema(
+    {
+        **_TARGET,
+        vol.Required(_ATTR_BATCH_ID): cv.string,
+        vol.Optional(_ATTR_INCLUDE_PHOTOS, default=False): cv.boolean,
+    }
+)
+_IMPORT_BATCH_SCHEMA = vol.Schema(
+    {
+        **_TARGET,
+        vol.Required(_ATTR_BATCH): dict,
+        vol.Optional(_ATTR_OVERWRITE, default=False): cv.boolean,
     }
 )
 _ADD_EVENT_SCHEMA = vol.Schema(
@@ -287,10 +304,25 @@ def async_setup_services(hass: HomeAssistant) -> None:
         """Return the full record of one batch (first matching chamber)."""
         for coordinator in _coordinators(hass, call):
             try:
-                return coordinator.export_batch(call.data[_ATTR_BATCH_ID])
+                return await coordinator.async_export_batch(
+                    call.data[_ATTR_BATCH_ID], include_photos=call.data[_ATTR_INCLUDE_PHOTOS]
+                )
             except ValueError:
                 continue
         raise HomeAssistantError(f"Unknown batch '{call.data[_ATTR_BATCH_ID]}'")
+
+    async def import_batch(call: ServiceCall) -> ServiceResponse:
+        """Create a batch from an export_batch payload in the chamber(s)."""
+        imported: list[str] = []
+        for coordinator in _coordinators(hass, call):
+            try:
+                batch = await coordinator.async_import_batch(
+                    call.data[_ATTR_BATCH], overwrite=call.data[_ATTR_OVERWRITE]
+                )
+            except ValueError as err:
+                raise HomeAssistantError(f"Invalid batch: {err}") from err
+            imported.append(batch.id)
+        return {"imported": imported}
 
     async def record_weight(call: ServiceCall) -> None:
         moment = call.data.get(_ATTR_TIMESTAMP)
@@ -365,8 +397,15 @@ def async_setup_services(hass: HomeAssistant) -> None:
         DOMAIN,
         SERVICE_EXPORT_BATCH,
         export_batch,
-        schema=_BATCH_ID_SCHEMA,
+        schema=_EXPORT_BATCH_SCHEMA,
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_IMPORT_BATCH,
+        import_batch,
+        schema=_IMPORT_BATCH_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,
@@ -396,6 +435,7 @@ def async_unload_services(hass: HomeAssistant) -> None:
         SERVICE_ADD_BATCH_EVENT,
         SERVICE_DELETE_BATCH_EVENT,
         SERVICE_EXPORT_BATCH,
+        SERVICE_IMPORT_BATCH,
         SERVICE_CREATE_BATCH,
         SERVICE_RECORD_WEIGHT,
         SERVICE_SET_REFERENCE_BATCH,

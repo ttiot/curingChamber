@@ -38,6 +38,7 @@ class CuringChamberStore:
         self._data.setdefault("batches", {})
         self._data.setdefault("reference_batch_id", None)
         self._data.setdefault("manual_weight", None)
+        self._data.setdefault("weigh_in_reminders", {})
         return self._data
 
     @property
@@ -68,6 +69,11 @@ class CuringChamberStore:
     def manual_weight(self) -> dict[str, float] | None:
         """Last hand-entered chamber weight: ``{"weight": ..., "timestamp": ...}``."""
         return self._data.get("manual_weight")
+
+    @property
+    def weigh_in_reminders(self) -> dict[str, float]:
+        """Last weigh-in reminder sent per batch id (timestamp)."""
+        return self._data.setdefault("weigh_in_reminders", {})
 
     def set_manual_weight(self, weight: float, timestamp: float) -> None:
         self._data["manual_weight"] = {"weight": weight, "timestamp": timestamp}

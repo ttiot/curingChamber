@@ -44,7 +44,14 @@ diagnostics, and full FR/EN translations.
 - **Chamber kind:** charcuterie drying chamber or **cheese ripening cave** —
   each kind gets its own presets and a suitable condensation margin.
 - **Program import/export** as JSON (panel buttons and services) to share
-  recipes between chambers or installations.
+  recipes between chambers or installations, and **batch import/export**
+  (weigh-ins, journal, photos) to move a batch between chambers.
+- **Care reminders** per program (turn, wash, taste… every N hours) and a
+  **weigh-in reminder** for batches left unweighed, as notifications and bus
+  events.
+- **Ineffective-actuator detection**: an actuator running for long without
+  moving its quantity raises a targeted warning (failed compressor, iced
+  evaporator, empty humidifier…).
 - **Product batches** with **manual weigh-ins** (no scale required, optional
   note + photo), per-batch drying curve, a **predicted completion date (ETA)**
   from an exponential drying model, a **journal** (salting, turning, washing,
@@ -54,10 +61,15 @@ diagnostics, and full FR/EN translations.
   stays too warm, and phases that end when the core reaches a temperature.
 - **Derived sensors:** dew point (Magnus), absolute humidity, weight loss %,
   drying rate %/day, core temperature delta.
-- **Sidebar panel** (no YAML): live gauges and regulation decisions, batch
-  cards with drying curves, weigh-in and photo capture from your phone, a
-  visual multi-phase program editor and a history view comparing finished
-  batches. Multi-chamber aware.
+- **Sidebar panel** (no YAML): live gauges, regulation decisions and a
+  temperature / humidity history chart, batch cards with drying curves and the
+  chamber conditions over each batch, weigh-in and photo capture from your
+  phone, a visual multi-phase program editor and a history view comparing
+  finished batches (loss, duration, mean rate, mean T° / RH). Multi-chamber
+  aware.
+- **Automation blueprints** (phase notifications, sensor-fault cutoff,
+  reminder forwarding) and **automatic housekeeping** (auto-archive, photo
+  purge).
 - **Native entities** (`climate`, `humidifier`, `sensor`, `binary_sensor`,
   `switch`, `select`, `button`, `number`), services, a websocket API, bus
   events and a bundled **custom Lovelace card**.
@@ -90,13 +102,18 @@ The config flow has four screens:
    stirring fan / air-renewal. Any `switch`, `input_boolean`, `fan` or `light`
    works. Configure none for pure monitoring.
 3. **Notifications** — optionally choose one or more `notify.*` services (e.g.
-   your phone). Persistent notifications are always created.
+   your phone), and the **weigh-in reminder** delay (days without a weigh-in
+   on an active batch before a reminder, default 7, 0 = off). Persistent
+   notifications are always created.
 4. **Food-safety disclaimer** — read and submit to finish.
 
 Everything is reconfigurable afterwards via *Configure* (options flow):
 **Sensors**, **Actuators**, **Regulation & safety** (chamber kind, deadbands,
-compressor timers, absolute limits, product core maximum, condensation margin,
-degraded-mode delays…) and **Notifications**.
+compressor timers, absolute limits, ineffective-actuator detection delay,
+product core maximum, condensation margin, degraded-mode delays…),
+**Notifications** and **Batches & housekeeping** (auto-archive completed
+batches after N days, delete photos of archived batches after N days, both
+off by default).
 
 ---
 
@@ -122,6 +139,7 @@ degraded-mode delays…) and **Notifications**.
 | `binary_sensor` | Sensor fault | Sensor unavailable or frozen |
 | `binary_sensor` | Probe divergence | Two probes disagree |
 | `binary_sensor` | Door open too long | Door left open past the delay |
+| `binary_sensor` | Actuator ineffective | An actuator has run for longer than the detection delay (default 60 min) without moving its quantity by 0.3 °C / 2 %RH; the actuators concerned are in attributes |
 | `switch` | Regulation | Master enable/disable |
 | `switch` | Maintenance mode | Everything off, no alerts |
 | `button` | Next phase / Set reference weight / Acknowledge alerts | — |
@@ -204,6 +222,26 @@ linearly from `start_temp` / `start_humidity` (each optional) to `target_temp` /
 `target_humidity` over the first `ramp_hours` hours of the phase, then hold.
 Paused time freezes the ramp. The optional `category` (`charcuterie`, the
 default, or `cheese`) only tags the program.
+
+**Care reminders.** A program may carry `reminders`, each with a `kind` (a
+journal kind such as `turned`, `washed`, `tasting`, or any short text),
+`every_hours`, an optional `note` and optional `phases` (phase names; empty =
+whole program). While the program runs, a notification suggests that journal
+entry at the given interval (wall clock, paused time excluded; a phase-scoped
+reminder counts from the phase start), and a `reminder` bus event carries the
+active batches concerned. The *Current phase* sensor exposes `next_reminder`.
+The cheese presets turn (and wash) the products every day or two.
+
+```yaml
+reminders:
+  - kind: turned
+    every_hours: 48
+    phases: [ripening]
+  - kind: washed
+    every_hours: 48
+    note: brine / morge
+    phases: [ripening]
+```
 
 ```yaml
 service: curing_chamber.create_program
@@ -292,7 +330,20 @@ and a note: `add_batch_event` / `delete_batch_event` services, websocket
 `batch/export`) returns the whole record — batch, weigh-ins, journal, derived
 figures and the program used; the panel's **Export JSON** / **Export CSV**
 buttons download it (the CSV merges weigh-ins and journal entries in one
-timeline).
+timeline). With `include_photos: true` the photos are embedded as
+`photo_data`, and `import_batch` (websocket `batch/import`, panel button
+**Import a batch**) recreates the batch — weigh-ins, journal and photos — on
+any chamber, with a fresh id unless `overwrite: true`.
+
+**Weigh-in reminder.** An active batch with no weigh-in for the configured
+number of days gets a notification once per interval, a `weigh_in_due` bus
+event, a `weigh_in_due` flag in its summary (listed in the *Active batches*
+sensor attributes) and a badge on its panel card; a weigh-in clears it.
+
+**Housekeeping.** When enabled in *Batches & housekeeping*, completed batches
+are archived N days after completion (`batch_archived` bus event) and the
+photos of archived batches are deleted N days after archiving; the weigh-ins
+themselves are kept.
 
 ```yaml
 # Create a batch (first one becomes the reference automatically)
@@ -342,9 +393,11 @@ Once a chamber is configured, a **Curing Chamber** entry appears in the sidebar
 no ingress). It is available to all users, not only admins, and follows the
 active theme. Four views:
 
-1. **Chamber** — T° / RH / dew-point (and product core) gauges with targets, actuator states and
+1. **Chamber** — T° / RH / dew-point (and product core) gauges with targets, a
+   **temperature & humidity history** chart (24 h / 7 d / 30 d, from the
+   recorder, targets as dashed lines), actuator states and
    run-hours, the running program with its phase timeline (start / pause /
-   next phase / stop), manual targets, regulation & maintenance toggles,
+   next phase / stop) and next care reminder, manual targets, regulation & maintenance toggles,
    active alerts with the recommended manual action, last regulation decisions.
 2. **Batches** — active and completed batches, drying curve with the target
    line and the ETA projection, weigh-in history (deletable), journal,
@@ -356,7 +409,8 @@ active theme. Four views:
    category, live validation, save, delete, start, and **export / import** of
    programs as JSON files. Presets are those of the chamber kind.
 4. **History** — overlay the drying curves of finished batches and compare
-   their final loss, duration and mean drying rate to tune your recipes.
+   their program, final loss, duration, mean drying rate and the mean chamber
+   temperature / humidity over each batch to tune your recipes.
 
 With several chambers, a selector in the header switches between them. The
 list is live: a chamber added, renamed or removed (from the panel or from
@@ -369,8 +423,9 @@ available as a service for automations.
 ### Custom card
 
 The integration bundles a Lovelace card (`curing-chamber-card`, auto-registered)
-showing each batch's drying curve, loss gauge and ETA, plus an inline
-weight-and-photo form to record a weigh-in from your phone:
+showing each batch's drying curve, loss gauge, ETA and last journal entry
+(with a one-tap **Turned** button), plus an inline weight-and-photo form to
+record a weigh-in from your phone:
 
 ```yaml
 type: custom:curing-chamber-card
@@ -432,6 +487,23 @@ cards:
 Automate on bus events (`curing_chamber_event`, types `phase_changed`,
 `program_completed`, `alert_raised`, `alert_cleared`, `manual_action_required`)
 or on the `binary_sensor.*_manual_action_required` state.
+
+---
+
+## Automation blueprints
+
+Three blueprints ship in the repository (`blueprints/automation/curing_chamber/`).
+Import each one from *Settings → Automations & scenes → Blueprints → Import
+blueprint* with its URL:
+
+| Blueprint | What it does | Import URL |
+|---|---|---|
+| Phase and program notifications | Notifies on `phase_changed` / `program_completed` bus events | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/phase_notifications.yaml` |
+| Cut power on sensor fault | Switches off extra devices (a plug feeding the fridge…) when *Sensor fault* turns on, optional notification | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/sensor_fault_cutoff.yaml` |
+| Care and weigh-in reminders | Forwards the `reminder` and `weigh_in_due` events to a notify service | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/care_and_weigh_in_reminders.yaml` |
+
+Each takes a notify service (e.g. `notify.mobile_app_my_phone`) and, where
+relevant, an optional chamber `entry_id` filter for multi-chamber setups.
 
 ---
 
@@ -523,7 +595,14 @@ d'action manuelle en mode dégradé, diagnostics, traductions FR/EN complètes.
 - **Type de chambre** : séchoir à charcuterie ou **cave d'affinage à
   fromages** — chaque type a ses presets et une marge de condensation adaptée.
 - **Import / export des programmes** en JSON (boutons du panneau et services)
-  pour partager ses recettes entre chambres ou installations.
+  pour partager ses recettes entre chambres ou installations, et **import /
+  export de lots** (pesées, journal, photos) pour déplacer un lot.
+- **Rappels d'entretien** par programme (retourner, laver, goûter… toutes les
+  N heures) et **rappel de pesée** pour les lots oubliés, en notifications et
+  événements de bus.
+- **Détection d'actionneur inefficace** : un actionneur qui tourne longtemps
+  sans faire bouger sa grandeur déclenche un avertissement ciblé (compresseur
+  en défaut, évaporateur givré, humidificateur vide…).
 - **Lots de produits** avec **pesées manuelles** (sans balance, note + photo
   optionnelles), courbe de séchage par lot, **date de fin estimée (ETA)** par un
   modèle de séchage exponentiel, **journal** (salage, retournement, lavage,
@@ -535,10 +614,15 @@ d'action manuelle en mode dégradé, diagnostics, traductions FR/EN complètes.
   température.
 - **Capteurs dérivés** : point de rosée (Magnus), humidité absolue, perte de
   poids %, vitesse de séchage %/jour, écart de température à cœur.
-- **Panneau latéral** (sans YAML) : jauges et décisions de régulation en
-  direct, fiches de lots avec courbes de séchage, pesée et photo depuis le
-  téléphone, éditeur visuel de programmes multi-phases et historique comparant
-  les lots terminés. Multi-chambre.
+- **Panneau latéral** (sans YAML) : jauges, décisions de régulation et
+  graphique d'historique température / hygrométrie, fiches de lots avec
+  courbes de séchage et conditions de la chambre pendant chaque lot, pesée et
+  photo depuis le téléphone, éditeur visuel de programmes multi-phases et
+  historique comparant les lots terminés (perte, durée, vitesse, T° / HR
+  moyennes). Multi-chambre.
+- **Blueprints d'automatisation** (notifications de phase, coupure sur défaut
+  capteur, relais des rappels) et **nettoyage automatique** (archivage,
+  purge des photos).
 - **Carte Lovelace personnalisée** et **API websocket** fournies avec
   l'intégration.
 
@@ -564,14 +648,19 @@ Le config flow comporte quatre écrans :
 2. **Actionneurs** — froid / chauffage / humidificateur / déshumidificateur /
    ventilateur / renouvellement d'air (au choix). Toute entité `switch`,
    `input_boolean`, `fan` ou `light` convient.
-3. **Notifications** — éventuellement un ou plusieurs services `notify.*`. Des
-   notifications persistantes sont toujours créées.
+3. **Notifications** — éventuellement un ou plusieurs services `notify.*`, et
+   le délai du **rappel de pesée** (jours sans pesée sur un lot actif avant
+   rappel, 7 par défaut, 0 = off). Des notifications persistantes sont
+   toujours créées.
 4. **Avertissement sécurité alimentaire** — lisez et validez pour terminer.
 
 Tout est reconfigurable ensuite via *Configurer* (options) : **Capteurs**,
 **Actionneurs**, **Régulation & sécurité** (type de chambre, bandes mortes,
-temporisations compresseur, limites absolues, maximum à cœur du produit, marge
-de condensation, délais mode dégradé…), **Notifications**.
+temporisations compresseur, limites absolues, délai de détection d'actionneur
+inefficace, maximum à cœur du produit, marge de condensation, délais mode
+dégradé…), **Notifications** et **Lots & nettoyage** (archivage automatique
+des lots terminés après N jours, suppression des photos des lots archivés
+après N jours, désactivés par défaut).
 
 ## Entités
 
@@ -595,6 +684,7 @@ de condensation, délais mode dégradé…), **Notifications**.
 | `binary_sensor` | Défaut capteur | Capteur indisponible ou figé |
 | `binary_sensor` | Divergence des sondes | Deux sondes en désaccord |
 | `binary_sensor` | Porte ouverte trop longtemps | — |
+| `binary_sensor` | Actionneur inefficace | Un actionneur tourne depuis plus que le délai de détection (60 min par défaut) sans faire bouger sa grandeur de 0,3 °C / 2 %HR ; actionneurs concernés en attributs |
 | `switch` | Régulation | Activation générale |
 | `switch` | Mode maintenance | Tout OFF, pas d'alertes |
 | `button` | Phase suivante / Poids de référence / Acquitter | — |
@@ -673,6 +763,17 @@ phase, puis se maintiennent ; une pause fige la rampe. Démarrez avec
 `set_reference_weight`, `acknowledge_alert`, `delete_program`. Avec plusieurs
 chambres, ciblez-en une via le champ `device_id`.
 
+**Rappels d'entretien.** Un programme peut porter des `reminders`, chacun avec
+un `kind` (type de journal comme `turned`, `washed`, `tasting`, ou tout texte
+court), `every_hours`, une `note` optionnelle et des `phases` optionnelles
+(noms de phases ; vide = tout le programme). Pendant le programme, une
+notification propose cette entrée de journal à l'intervalle indiqué (temps
+réel, pauses exclues ; un rappel limité à une phase compte depuis le début de
+la phase), et un événement de bus `reminder` liste les lots actifs concernés.
+Le capteur *Phase courante* expose `next_reminder`. Les presets fromage
+retournent (et lavent) les produits tous les un ou deux jours ; voir l'exemple
+YAML de la section anglaise.
+
 **Import / export.** `curing_chamber.export_programs` renvoie les programmes
 utilisateur de la chambre dans un format portable (`{"format":
 "curing_chamber/programs", "version": 1, "programs": [...]}`) ;
@@ -720,7 +821,22 @@ carte *Journal* dans le panneau. `export_batch` (service avec réponse,
 websocket `batch/export`) renvoie la fiche complète — lot, pesées, journal,
 valeurs dérivées et programme utilisé ; les boutons **Exporter JSON** /
 **Exporter CSV** du panneau la téléchargent (le CSV fusionne pesées et journal
-en une seule chronologie).
+en une seule chronologie). Avec `include_photos: true` les photos sont
+intégrées en `photo_data`, et `import_batch` (websocket `batch/import`,
+bouton **Importer un lot** du panneau) recrée le lot — pesées, journal et
+photos — sur n'importe quelle chambre, avec un nouvel id sauf
+`overwrite: true`.
+
+**Rappel de pesée.** Un lot actif sans pesée depuis le nombre de jours
+configuré reçoit une notification une fois par intervalle, un événement de bus
+`weigh_in_due`, un indicateur `weigh_in_due` dans son résumé (listé dans les
+attributs du capteur *Lots actifs*) et un badge sur sa fiche dans le panneau ;
+une pesée l'efface.
+
+**Nettoyage.** Si activé dans *Lots & nettoyage*, les lots terminés sont
+archivés N jours après leur fin (événement `batch_archived`) et les photos des
+lots archivés sont supprimées N jours après l'archivage ; les pesées sont
+conservées.
 
 ```yaml
 # Créer un lot (le premier devient automatiquement la référence)
@@ -773,9 +889,11 @@ Assistant Container — ni add-on, ni ingress). Il est accessible à tous les
 utilisateurs, pas seulement aux administrateurs, et suit le thème actif. Quatre
 vues :
 
-1. **Chambre** — jauges T° / HR / point de rosée (et cœur du produit) avec consignes, état et heures
+1. **Chambre** — jauges T° / HR / point de rosée (et cœur du produit) avec
+   consignes, **graphique d'historique température & hygrométrie** (24 h / 7 j
+   / 30 j, depuis le recorder, consignes en pointillés), état et heures
    de marche des actionneurs, programme en cours avec sa frise de phases
-   (démarrer / pause / phase suivante / stop), consignes manuelles,
+   (démarrer / pause / phase suivante / stop) et prochain rappel, consignes manuelles,
    interrupteurs régulation et maintenance, alertes actives avec l'action
    manuelle recommandée, dernières décisions de régulation.
 2. **Lots** — lots actifs et terminés, courbe de séchage avec la cible et la
@@ -790,7 +908,9 @@ vues :
    supprimer, démarrer, et **export / import** des programmes en fichiers JSON.
    Les presets listés sont ceux du type de la chambre.
 4. **Historique** — superposer les courbes de séchage des lots terminés et
-   comparer perte finale, durée et vitesse moyenne pour ajuster vos recettes.
+   comparer programme, perte finale, durée, vitesse moyenne et température /
+   hygrométrie moyennes de la chambre pendant chaque lot pour ajuster vos
+   recettes.
 
 Avec plusieurs enceintes, un sélecteur dans l'en-tête permet de basculer. Le
 panneau dialogue avec l'intégration en websocket (commandes `curing_chamber/*`,
@@ -800,13 +920,30 @@ automatisations.
 ### Carte personnalisée
 
 L'intégration fournit une carte Lovelace (`curing-chamber-card`, auto-enregistrée)
-montrant la courbe de séchage, la jauge de perte et l'ETA de chaque lot, plus un
+montrant la courbe de séchage, la jauge de perte, l'ETA et la dernière entrée de
+journal de chaque lot (avec un bouton **Retourné** en un geste), plus un
 formulaire intégré poids + photo pour saisir une pesée depuis votre téléphone :
 
 ```yaml
 type: custom:curing-chamber-card
 entity: sensor.curing_chamber_active_batches
 ```
+
+## Blueprints d'automatisation
+
+Trois blueprints sont fournis dans le dépôt
+(`blueprints/automation/curing_chamber/`). Importez-les depuis *Paramètres →
+Automatisations et scènes → Blueprints → Importer un blueprint* avec leur URL :
+
+| Blueprint | Rôle | URL d'import |
+|---|---|---|
+| Notifications de phase et de programme | Notifie sur les événements `phase_changed` / `program_completed` | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/phase_notifications.yaml` |
+| Coupure sur défaut capteur | Éteint des appareils supplémentaires (prise alimentant le frigo…) quand *Défaut capteur* passe à ON, notification optionnelle | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/sensor_fault_cutoff.yaml` |
+| Rappels d'entretien et de pesée | Relaie les événements `reminder` et `weigh_in_due` vers un service de notification | `https://github.com/ttiot/curingChamber/blob/main/blueprints/automation/curing_chamber/care_and_weigh_in_reminders.yaml` |
+
+Chacun prend un service de notification (ex. `notify.mobile_app_mon_tel`) et,
+selon le cas, un filtre `entry_id` optionnel pour les installations
+multi-chambres.
 
 ## FAQ / dépannage
 

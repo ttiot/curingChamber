@@ -34,6 +34,12 @@ CONF_VENT_SWITCH: Final = "vent_switch"
 
 # Notifications ---------------------------------------------------------------
 CONF_NOTIFY_SERVICES: Final = "notify_services"
+CONF_WEIGH_IN_REMINDER_DAYS: Final = "weigh_in_reminder_days"
+DEFAULT_WEIGH_IN_REMINDER_DAYS: Final = 7  # days, 0 = off
+CONF_AUTO_ARCHIVE_DAYS: Final = "auto_archive_days"
+DEFAULT_AUTO_ARCHIVE_DAYS: Final = 0  # days after completion, 0 = off
+CONF_PURGE_PHOTOS_DAYS: Final = "purge_photos_days"
+DEFAULT_PURGE_PHOTOS_DAYS: Final = 0  # days after archiving, 0 = off
 
 # Regulation tuning -----------------------------------------------------------
 CONF_TEMP_DEADBAND: Final = "temp_deadband"
@@ -66,6 +72,7 @@ CONF_VENT_RUN: Final = "vent_run"
 CONF_CO2_THRESHOLD: Final = "co2_threshold"
 CONF_CONDENSATION_MARGIN: Final = "condensation_margin"
 CONF_CORE_TEMP_MAX: Final = "core_temp_max"
+CONF_ACTUATOR_INEFFECTIVE_MINUTES: Final = "actuator_ineffective_minutes"
 CONF_MANUAL_OVERRIDE_RESPECT: Final = "manual_override_respect_minutes"
 CONF_TICK_INTERVAL: Final = "tick_interval"
 
@@ -102,6 +109,7 @@ DEFAULT_MANUAL_OVERRIDE_RESPECT: Final = 0  # minutes (0 = reprendre le contrôl
 DEFAULT_TICK_INTERVAL: Final = 30  # seconds
 DEFAULT_CONDENSATION_MARGIN: Final = 1.0  # degC
 DEFAULT_CORE_TEMP_MAX: Final = 24.0  # degC, product core
+DEFAULT_ACTUATOR_INEFFECTIVE_MINUTES: Final = 60  # minutes, 0 = disabled
 # A cheese cave runs at 85-95 %RH, where the dew point sits well under 1 degC
 # below the air temperature: a tighter margin keeps the alert meaningful.
 DEFAULT_CONDENSATION_MARGIN_CHEESE: Final = 0.5  # degC
@@ -121,6 +129,9 @@ EVENT_TYPE_ALERT_CLEARED: Final = "alert_cleared"
 EVENT_TYPE_MANUAL_ACTION: Final = "manual_action_required"
 EVENT_TYPE_BATCH_COMPLETED: Final = "batch_completed"
 EVENT_TYPE_BATCH_EVENT: Final = "batch_event"
+EVENT_TYPE_WEIGH_IN_DUE: Final = "weigh_in_due"
+EVENT_TYPE_REMINDER: Final = "reminder"
+EVENT_TYPE_BATCH_ARCHIVED: Final = "batch_archived"
 
 # --- Storage -----------------------------------------------------------------
 STORAGE_VERSION: Final = 1
@@ -148,6 +159,7 @@ SERVICE_DELETE_BATCH: Final = "delete_batch"
 SERVICE_ADD_BATCH_EVENT: Final = "add_batch_event"
 SERVICE_DELETE_BATCH_EVENT: Final = "delete_batch_event"
 SERVICE_EXPORT_BATCH: Final = "export_batch"
+SERVICE_IMPORT_BATCH: Final = "import_batch"
 
 # --- Batch photos ------------------------------------------------------------
 # Legacy (pre-panel) location: <config>/www/<PHOTO_WWW_SUBDIR>/<batch_id>/ served

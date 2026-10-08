@@ -99,6 +99,7 @@ const STR = {
     rate: "Rate",
     eta: "ETA",
     weigh_ins: "weigh-ins",
+    weigh_in_due: "weigh-in due",
     last_weigh_in: "Last weigh-in",
     drying_curve: "Drying curve",
     curve_needs_two: "The curve appears once two weigh-ins are recorded.",
@@ -121,12 +122,29 @@ const STR = {
     kind_other: "Other",
     confirm_delete_event: "Delete this journal entry?",
     export_json: "Export JSON",
+    import_batch: "Import a batch",
+    batch_imported: "Batch imported.",
     export_csv: "Export CSV",
     eta_model_exponential: "exponential model",
     eta_model_linear: "linear model",
     no_entries: "No journal entry yet.",
     core_temp: "Core",
     core_delta: "core − air",
+    ambient_history: "Temperature & humidity history",
+    ambient_during_batch: "Chamber conditions during the batch",
+    mean_temp: "Mean T°",
+    mean_hum: "Mean RH",
+    range_24h: "24 h",
+    range_7d: "7 d",
+    range_30d: "30 d",
+    range_batch: "batch",
+    no_history_data: "No recorded history for this period.",
+    reminders: "Care reminders",
+    add_reminder: "Add reminder",
+    every_hours: "every (h)",
+    all_phases: "all phases",
+    next_reminder: "Next reminder",
+    reminder_hint: "While the program runs, a notification suggests this journal entry at the given interval (restarted when a targeted phase begins).",
     confirm_delete_batch: "Delete this batch and all its weigh-ins? This cannot be undone.",
     gallery: "Photos",
     record_weigh_in: "Record a weigh-in",
@@ -286,6 +304,7 @@ const STR = {
     rate: "Vitesse",
     eta: "Fin estimée",
     weigh_ins: "pesées",
+    weigh_in_due: "pesée à faire",
     last_weigh_in: "Dernière pesée",
     drying_curve: "Courbe de séchage",
     curve_needs_two: "La courbe apparaît dès deux pesées.",
@@ -308,12 +327,29 @@ const STR = {
     kind_other: "Autre",
     confirm_delete_event: "Supprimer cette entrée du journal ?",
     export_json: "Exporter JSON",
+    import_batch: "Importer un lot",
+    batch_imported: "Lot importé.",
     export_csv: "Exporter CSV",
     eta_model_exponential: "modèle exponentiel",
     eta_model_linear: "modèle linéaire",
     no_entries: "Aucune entrée pour l'instant.",
     core_temp: "À cœur",
     core_delta: "cœur − air",
+    ambient_history: "Historique température & hygrométrie",
+    ambient_during_batch: "Conditions de la chambre pendant le lot",
+    mean_temp: "T° moy.",
+    mean_hum: "HR moy.",
+    range_24h: "24 h",
+    range_7d: "7 j",
+    range_30d: "30 j",
+    range_batch: "lot",
+    no_history_data: "Aucun historique enregistré sur cette période.",
+    reminders: "Rappels d'entretien",
+    add_reminder: "Ajouter un rappel",
+    every_hours: "toutes les (h)",
+    all_phases: "toutes les phases",
+    next_reminder: "Prochain rappel",
+    reminder_hint: "Pendant le programme, une notification propose cette entrée de journal à l'intervalle indiqué (relancé au début d'une phase ciblée).",
     confirm_delete_batch: "Supprimer ce lot et toutes ses pesées ? Cette action est irréversible.",
     gallery: "Photos",
     record_weigh_in: "Enregistrer une pesée",
@@ -686,6 +722,7 @@ const STYLES = `
     padding: 1px 6px; vertical-align: middle; white-space: nowrap; }
   .badge.status-completed { color: var(--success-color, #43a047); border-color: var(--success-color, #43a047); }
   .badge.status-archived { color: var(--disabled-text-color, #9e9e9e); border-color: var(--disabled-text-color, #9e9e9e); }
+  .badge.due { color: var(--warning-color, #ffa600); border-color: var(--warning-color, #ffa600); }
   .badge.status-active { color: var(--info-color, var(--primary-color)); border-color: var(--info-color, var(--primary-color)); }
   .timeline { display: flex; gap: 4px; margin: 8px 0; }
   .tl-phase { flex: 1 1 0; min-width: 40px; padding: 6px 8px; border-radius: 6px; background: var(--secondary-background-color, var(--divider-color));
@@ -718,6 +755,12 @@ const STYLES = `
   .chart .pt { fill: var(--primary-color); }
   .chart .target { stroke: var(--error-color, #db4437); stroke-dasharray: 5 4; stroke-width: 1.5; }
   .chart .proj { fill: none; stroke: var(--primary-color); stroke-dasharray: 4 4; stroke-width: 1.5; opacity: .7; }
+  .chart .line-temp { fill: none; stroke: var(--error-color, #db4437); stroke-width: 1.5; }
+  .chart .line-hum { fill: none; stroke: var(--info-color, #039be5); stroke-width: 1.5; }
+  .chart .line-core { fill: none; stroke: var(--warning-color, #ffa600); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .chart .target-temp { stroke: var(--error-color, #db4437); stroke-dasharray: 5 4; stroke-width: 1; opacity: .6; }
+  .chart .target-hum { stroke: var(--info-color, #039be5); stroke-dasharray: 5 4; stroke-width: 1; opacity: .6; }
+  .range button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
   .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: .85em; }
   .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .msg { padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-size: .9em; }
@@ -764,6 +807,8 @@ class CuringChamberPanel extends HTMLElement {
     this._entryId = lsGet(LS_CHAMBER);
     this._tab = TABS.includes(lsGet(LS_TAB)) ? lsGet(LS_TAB) : "chamber";
     this._state = null;
+    this._historyRange = lsGet("cc-history-range") || "24h";
+    this._historyCache = {};
     this._programs = [];
     this._batches = [];
     this._showArchived = false;
@@ -1244,6 +1289,9 @@ class CuringChamberPanel extends HTMLElement {
     ]);
     grid.appendChild(gaugeCard);
 
+    // Ambient history ----------------------------------------------------------
+    grid.appendChild(this._ambientHistoryCard(st));
+
     // Actuators + weight --------------------------------------------------------
     const actuators = st.actuators || {};
     const chips = h("div", { class: "chips" });
@@ -1359,6 +1407,170 @@ class CuringChamberPanel extends HTMLElement {
   }
 
   /** SVG arc gauge from -120° to +120°. */
+  // -- Recorder history (temperature / humidity / core) ------------------------
+
+  /** Fetch recorder history for the source sensors between two timestamps (s). */
+  async _fetchHistory(start, end, sources) {
+    const ids = Object.values(sources).filter(Boolean);
+    if (!ids.length || !this._hass) return {};
+    const key = `${ids.join(",")}|${Math.floor(start / 60)}|${Math.floor(end / 60)}`;
+    const cached = this._historyCache[key];
+    if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.data;
+    const raw = await this._hass.callWS({
+      type: "history/history_during_period",
+      start_time: new Date(start * 1000).toISOString(),
+      end_time: new Date(end * 1000).toISOString(),
+      entity_ids: ids,
+      minimal_response: true,
+      no_attributes: true,
+      significant_changes_only: false,
+    });
+    const data = {};
+    for (const [name, id] of Object.entries(sources)) {
+      if (!id) continue;
+      const pts = [];
+      for (const item of raw[id] || []) {
+        const value = parseFloat(item.s != null ? item.s : item.state);
+        const ts = item.lu != null ? Number(item.lu) : Date.parse(item.last_updated) / 1000;
+        if (!Number.isNaN(value) && !Number.isNaN(ts)) pts.push({ t: ts, v: value });
+      }
+      data[name] = pts;
+    }
+    Object.keys(this._historyCache).forEach((k) => { if (Date.now() - this._historyCache[k].at > 30 * 60 * 1000) delete this._historyCache[k]; });
+    this._historyCache[key] = { at: Date.now(), data };
+    return data;
+  }
+
+  /** Mean of a history series (time-weighted step function). */
+  _historyMean(pts, start, end) {
+    if (!pts || !pts.length) return null;
+    let area = 0;
+    let span = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const t0 = Math.max(start, pts[i].t);
+      const t1 = Math.min(end, i + 1 < pts.length ? pts[i + 1].t : end);
+      if (t1 <= t0) continue;
+      area += pts[i].v * (t1 - t0);
+      span += t1 - t0;
+    }
+    return span > 0 ? area / span : pts[pts.length - 1].v;
+  }
+
+  /** Dual-axis time chart: temperature (left) and humidity (right). */
+  _historyChart(data, start, end, opts = {}) {
+    const t = (k) => this._t(k);
+    const W = 600;
+    const H = 240;
+    const padL = 36;
+    const padR = 36;
+    const padT = 10;
+    const padB = 26;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const temps = [...(data.temp || []), ...(data.core || [])].map((p) => p.v);
+    if (opts.targetTemp != null) temps.push(opts.targetTemp);
+    const hums = (data.humidity || []).map((p) => p.v);
+    if (opts.targetHumidity != null) hums.push(opts.targetHumidity);
+    const tMin = temps.length ? Math.floor(Math.min(...temps) - 1) : 0;
+    const tMax = temps.length ? Math.ceil(Math.max(...temps) + 1) : 30;
+    const hMin = hums.length ? Math.max(0, Math.floor(Math.min(...hums) / 5) * 5 - 5) : 40;
+    const hMax = hums.length ? Math.min(100, Math.ceil(Math.max(...hums) / 5) * 5 + 5) : 100;
+    const x = (ts) => padL + ((ts - start) / Math.max(1, end - start)) * plotW;
+    const yT = (v) => padT + plotH - ((v - tMin) / Math.max(1, tMax - tMin)) * plotH;
+    const yH = (v) => padT + plotH - ((v - hMin) / Math.max(1, hMax - hMin)) * plotH;
+    const svg = s("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img" });
+    const steps = 4;
+    for (let i = 0; i <= steps; i++) {
+      const yy = padT + (plotH / steps) * i;
+      svg.appendChild(s("line", { class: "grid", x1: padL, x2: W - padR, y1: yy, y2: yy }));
+      svg.appendChild(s("text", { class: "lbl", x: padL - 4, y: yy + 3, "text-anchor": "end" }, `${(tMax - ((tMax - tMin) / steps) * i).toFixed(0)}°`));
+      svg.appendChild(s("text", { class: "lbl", x: W - padR + 4, y: yy + 3 }, `${(hMax - ((hMax - hMin) / steps) * i).toFixed(0)}%`));
+    }
+    const span = end - start;
+    const ticks = 6;
+    for (let i = 0; i <= ticks; i++) {
+      const ts = start + (span / ticks) * i;
+      const d = new Date(ts * 1000);
+      const label = span <= 2 * 86400
+        ? d.toLocaleTimeString(this._locale, { hour: "2-digit", minute: "2-digit" })
+        : d.toLocaleDateString(this._locale, { day: "2-digit", month: "short" });
+      svg.appendChild(s("text", { class: "lbl", x: x(ts), y: H - padB + 14, "text-anchor": i === 0 ? "start" : i === ticks ? "end" : "middle" }, label));
+    }
+    svg.appendChild(s("line", { class: "axis", x1: padL, x2: W - padR, y1: padT + plotH, y2: padT + plotH }));
+    if (opts.targetTemp != null) svg.appendChild(s("line", { class: "target-temp", x1: padL, x2: W - padR, y1: yT(opts.targetTemp), y2: yT(opts.targetTemp) }));
+    if (opts.targetHumidity != null) svg.appendChild(s("line", { class: "target-hum", x1: padL, x2: W - padR, y1: yH(opts.targetHumidity), y2: yH(opts.targetHumidity) }));
+    const line = (pts, cls, y) => {
+      if (!pts || !pts.length) return;
+      // Step line: a recorder state holds until the next change.
+      const parts = [];
+      for (let i = 0; i < pts.length; i++) {
+        const t0 = Math.max(start, pts[i].t);
+        const t1 = i + 1 < pts.length ? pts[i + 1].t : end;
+        parts.push(`${x(t0).toFixed(1)},${y(pts[i].v).toFixed(1)}`, `${x(Math.min(end, t1)).toFixed(1)},${y(pts[i].v).toFixed(1)}`);
+      }
+      svg.appendChild(s("polyline", { class: cls, points: parts.join(" ") }));
+    };
+    line(data.humidity, "line-hum", yH);
+    line(data.temp, "line-temp", yT);
+    line(data.core, "line-core", yT);
+    const legend = h("div", { class: "legend", style: "margin-top:6px" }, [
+      data.temp && data.temp.length ? h("span", null, [h("span", { class: "sw", style: "background:var(--error-color, #db4437)" }), t("temperature")]) : null,
+      data.humidity && data.humidity.length ? h("span", null, [h("span", { class: "sw", style: "background:var(--info-color, #039be5)" }), t("humidity")]) : null,
+      data.core && data.core.length ? h("span", null, [h("span", { class: "sw", style: "background:var(--warning-color, #ffa600)" }), t("core_temp")]) : null,
+    ]);
+    return h("div", null, [svg, legend]);
+  }
+
+  /** A card that loads and draws the ambient history for [start, end]. */
+  _ambientChartBox(start, end, opts = {}) {
+    const t = (k) => this._t(k);
+    const sources = (this._state && this._state.sources) || {};
+    const box = h("div", { class: "muted small" }, t("loading"));
+    this._fetchHistory(start, end, sources).then((data) => {
+      clear(box);
+      box.className = "";
+      const any = Object.values(data).some((pts) => pts && pts.length);
+      if (!any) { box.className = "muted small"; box.textContent = t("no_history_data"); return; }
+      box.appendChild(this._historyChart(data, start, end, opts));
+    }).catch((err) => { box.textContent = `${t("error")}: ${err.message || err}`; });
+    return box;
+  }
+
+  /** [start, end] timestamps covering a batch: creation → completion (or now). */
+  _batchPeriod(b) {
+    const start = b.created_at || (b.samples && b.samples[0] && b.samples[0].timestamp) || Date.now() / 1000 - 86400;
+    const end = b.status === "active" ? Date.now() / 1000 : (b.completed_at || b.last_weigh_in || Date.now() / 1000);
+    return [start, Math.max(end, start + 3600)];
+  }
+
+  /** Mean chamber temperature / humidity over a batch (cached per batch id). */
+  async _ambientStats(b) {
+    this._ambientStatsCache = this._ambientStatsCache || {};
+    const key = `${b.id}|${b.status}|${b.completed_at || ""}`;
+    if (this._ambientStatsCache[key]) return this._ambientStatsCache[key];
+    const [start, end] = this._batchPeriod(b);
+    const sources = (this._state && this._state.sources) || {};
+    const data = await this._fetchHistory(start, end, { temp: sources.temp, humidity: sources.humidity });
+    const stats = { temp: this._historyMean(data.temp, start, end), humidity: this._historyMean(data.humidity, start, end) };
+    this._ambientStatsCache[key] = stats;
+    return stats;
+  }
+
+  _ambientHistoryCard(st) {
+    const t = (k) => this._t(k);
+    const ranges = { "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400 };
+    const now = Date.now() / 1000;
+    const span = ranges[this._historyRange] || ranges["24h"];
+    const buttons = h("div", { class: "row range" }, Object.keys(ranges).map((key) => h("button", {
+      class: `outline sm${key === this._historyRange ? " active" : ""}`,
+      onclick: () => { this._historyRange = key; lsSet("cc-history-range", key); this._renderTab(); },
+    }, t(`range_${key}`))));
+    return h("div", { class: "card span" }, [
+      h("h2", null, [h("span", { class: "grow" }, t("ambient_history")), buttons]),
+      this._ambientChartBox(now - span, now, { targetTemp: st.target_temp, targetHumidity: st.target_humidity }),
+    ]);
+  }
+
   _gauge(value, target, min, max, unit, label) {
     const W = 160;
     const H = 110;
@@ -1426,6 +1638,12 @@ class CuringChamberPanel extends HTMLElement {
           `${t("phase")} ${(prog.phase_index || 0) + 1}/${(prog.phases || []).length}: ${prog.phase_name || "—"}`,
           prog.phase_remaining != null ? ` · ${fmtDuration(prog.phase_remaining, t)} ${t("remaining")}` : "",
         ]),
+        prog.next_reminder ? h("div", { class: "muted small" }, [
+          `⏰ ${t("next_reminder")}: `,
+          h("b", null, JOURNAL_KINDS.includes(prog.next_reminder.kind) ? t(`kind_${prog.next_reminder.kind}`) : prog.next_reminder.kind),
+          prog.next_reminder.note ? ` (${prog.next_reminder.note})` : "",
+          ` · ${fmtDuration(prog.next_reminder.due_in, t)}`,
+        ]) : null,
         prog.ramp_remaining != null && prog.ramp_remaining > 0 ? h("div", { class: "muted small" }, [
           `↘ ${t("ramp_in_progress")} ${t("ramp_to")} `,
           h("b", null, [prog.phase_target_temp != null ? `${prog.phase_target_temp} °C` : null,
@@ -1482,7 +1700,10 @@ class CuringChamberPanel extends HTMLElement {
     const archivedToggle = h("input", { type: "checkbox", checked: this._showArchived, onchange: (ev) => { this._showArchived = ev.target.checked; this._renderTab(); } });
     wrap.appendChild(h("div", { class: "row between", style: "margin-bottom:12px" }, [
       h("label", { class: "inline" }, [archivedToggle, t("show_archived")]),
-      h("button", { onclick: () => { this._newBatch = true; this._renderTab(); } }, `+ ${t("new_batch")}`),
+      h("div", { class: "row" }, [
+        h("button", { class: "outline sm", onclick: () => this._importBatch() }, `⇧ ${t("import_batch")}`),
+        h("button", { onclick: () => { this._newBatch = true; this._renderTab(); } }, `+ ${t("new_batch")}`),
+      ]),
     ]));
     const list = this._batches.filter((b) => this._showArchived || b.status !== "archived");
     if (!list.length) {
@@ -1502,7 +1723,8 @@ class CuringChamberPanel extends HTMLElement {
     const pct = loss == null ? 0 : Math.max(0, Math.min(100, target ? (loss / target) * 100 : loss));
     const card = h("div", { class: "card batch-card", onclick: () => { this._detailBatchId = b.id; this._renderTab(); } }, [
       h("h2", null, [
-        h("span", { class: "grow" }, [b.name, " ", isRef ? h("span", { class: "badge" }, t("reference")) : null]),
+        h("span", { class: "grow" }, [b.name, " ", isRef ? h("span", { class: "badge" }, t("reference")) : null,
+          b.weigh_in_due ? [" ", h("span", { class: "badge due" }, `⚖ ${t("weigh_in_due")}`)] : null]),
         h("span", { class: `badge status-${b.status}` }, t(`status_${b.status}`)),
       ]),
       h("div", { class: "row" }, [
@@ -1616,6 +1838,8 @@ class CuringChamberPanel extends HTMLElement {
       h("h2", null, t("drying_curve")),
       lossPoints(b).length >= 2 ? this._curveChart([{ batch: b, color: null }], { target: b.target_loss_pct, eta: b.eta })
         : h("div", { class: "muted small" }, t("curve_needs_two")),
+      h("h2", { style: "margin-top:12px" }, t("ambient_during_batch")),
+      this._ambientChartBox(...this._batchPeriod(b)),
     ]);
     grid.appendChild(summary);
 
@@ -1700,12 +1924,36 @@ class CuringChamberPanel extends HTMLElement {
     return card;
   }
 
+  /** Pick an export_batch JSON file and create the batch here (photos included). */
+  async _importBatch() {
+    const t = (k) => this._t(k);
+    let data;
+    try {
+      data = await pickJsonFile();
+    } catch (err) {
+      this._showToast(t("import_invalid"), true);
+      return;
+    }
+    if (data == null) return;
+    const batch = data && data.batch && typeof data.batch === "object" ? data : data && data.name ? { batch: data } : null;
+    if (!batch) { this._showToast(t("import_invalid"), true); return; }
+    try {
+      const created = await this._ws("curing_chamber/batch/import", { batch: batch.batch });
+      this._showToast(t("batch_imported"));
+      await this._loadBatches();
+      this._detailBatchId = created.id;
+      this._renderTab();
+    } catch (err) {
+      this._showError(err);
+    }
+  }
+
   /** Download one batch as JSON (full record) or CSV (weigh-ins and journal, one timeline). */
   async _exportBatch(b, format) {
     const t = (k) => this._t(k);
     let data;
     try {
-      data = await this._ws("curing_chamber/batch/export", { batch_id: b.id });
+      data = await this._ws("curing_chamber/batch/export", { batch_id: b.id, include_photos: format === "json" });
     } catch (err) {
       this._showError(err);
       return;
@@ -1946,7 +2194,7 @@ class CuringChamberPanel extends HTMLElement {
 
   _blankProgram() {
     const category = (this._state && this._state.kind) || "charcuterie";
-    return { id: "", name: "", on_complete: "hold_last", builtin: false, category, phases: [this._blankPhase()] };
+    return { id: "", name: "", on_complete: "hold_last", builtin: false, category, phases: [this._blankPhase()], reminders: [] };
   }
 
   _blankPhase() {
@@ -1994,6 +2242,12 @@ class CuringChamberPanel extends HTMLElement {
     ed.program.name = ed.els.name.value.trim();
     ed.program.on_complete = ed.els.onComplete.value;
     ed.program.category = ed.els.category.value;
+    ed.program.reminders = (ed.els.reminders || []).map((row) => ({
+      kind: row.kind.value,
+      every_hours: num(row.every),
+      note: row.note.value.trim() || null,
+      phases: row.phase.value ? [row.phase.value] : [],
+    }));
     ed.program.phases = ed.els.phases.map((row) => ({
       name: row.name.value,
       target_temp: num(row.temp),
@@ -2094,6 +2348,31 @@ class CuringChamberPanel extends HTMLElement {
       }
     });
 
+    // Care reminders ----------------------------------------------------------
+    els.reminders = [];
+    const remindersBox = h("div", { title: t("reminder_hint") });
+    const phaseNames = p.phases.map((ph) => ph.name).filter(Boolean);
+    (p.reminders || []).forEach((r, i) => {
+      const row = {};
+      const known = JOURNAL_KINDS.includes(r.kind);
+      row.kind = h("select", { disabled: readOnly, onchange: validate }, [
+        ...JOURNAL_KINDS.map((k) => h("option", { value: k, selected: r.kind === k }, t(`kind_${k}`))),
+        !known ? h("option", { value: r.kind, selected: true }, r.kind) : null,
+      ]);
+      row.every = h("input", { type: "number", step: "1", min: "1", value: r.every_hours != null ? r.every_hours : "", placeholder: "h", disabled: readOnly, oninput: validate, style: "width:80px" });
+      row.note = h("input", { type: "text", value: r.note || "", placeholder: t("note"), disabled: readOnly, oninput: validate, style: "flex:1;min-width:120px" });
+      const current = (r.phases && r.phases[0]) || "";
+      row.phase = h("select", { disabled: readOnly, onchange: validate }, [
+        h("option", { value: "", selected: !current }, t("all_phases")),
+        ...phaseNames.map((n) => h("option", { value: n, selected: current === n }, n)),
+      ]);
+      els.reminders.push(row);
+      remindersBox.appendChild(h("div", { class: "phase-ramp" }, [
+        row.kind, h("span", null, t("every_hours")), row.every, row.phase, row.note,
+        !readOnly ? h("button", { class: "ghost sm", title: t("remove"), onclick: () => { this._readEditor(); p.reminders.splice(i, 1); this._renderTab(); } }, "✕") : null,
+      ]));
+    });
+
     this._validationBox = h("div");
     this._renderValidation();
 
@@ -2109,6 +2388,9 @@ class CuringChamberPanel extends HTMLElement {
       h("h2", { style: "margin-top:16px" }, t("phases")),
       phasesBox,
       !readOnly ? h("div", { style: "margin-top:8px" }, h("button", { class: "outline sm", onclick: () => { this._readEditor(); p.phases.push(this._blankPhase()); this._renderTab(); } }, `+ ${t("add_phase")}`)) : null,
+      (!readOnly || (p.reminders || []).length) ? h("h2", { style: "margin-top:16px" }, t("reminders")) : null,
+      remindersBox,
+      !readOnly ? h("div", { style: "margin-top:8px" }, h("button", { class: "outline sm", onclick: () => { this._readEditor(); (p.reminders = p.reminders || []).push({ kind: "turned", every_hours: 48, note: "", phases: [] }); this._renderTab(); } }, `+ ${t("add_reminder")}`)) : null,
       this._validationBox,
       h("div", { class: "row", style: "margin-top:16px" }, [
         !readOnly ? h("button", { onclick: () => this._saveProgram() }, t("save")) : null,
@@ -2153,7 +2435,12 @@ class CuringChamberPanel extends HTMLElement {
       if (ph.ramp_hours != null && ph.ramp_hours > 0) out.ramp_hours = ph.ramp_hours;
       return out;
     });
-    return { id: p.id, name: p.name, on_complete: p.on_complete || "hold_last", category: p.category || "charcuterie", phases };
+    const reminders = (p.reminders || []).map((r) => {
+      const out = { kind: r.kind, every_hours: r.every_hours, phases: r.phases || [] };
+      if (r.note) out.note = r.note;
+      return out;
+    });
+    return { id: p.id, name: p.name, on_complete: p.on_complete || "hold_last", category: p.category || "charcuterie", phases, reminders };
   }
 
   async _saveProgram() {
@@ -2180,6 +2467,14 @@ class CuringChamberPanel extends HTMLElement {
   // ===========================================================================
   // View 4 — History
   // ===========================================================================
+
+  /** Table cell showing a mean chamber value over the batch, loaded lazily. */
+  _ambientCell(b, key, suffix) {
+    const cell = h("td", { class: "muted" }, "…");
+    this._ambientStats(b).then((stats) => { cell.className = ""; cell.textContent = fmtNum(stats[key], 1, suffix); })
+      .catch(() => { cell.textContent = "—"; });
+    return cell;
+  }
 
   _viewHistory() {
     const t = (k) => this._t(k);
@@ -2227,13 +2522,16 @@ class CuringChamberPanel extends HTMLElement {
         h("td", null, [fmtNum(finalLoss, 1, " %"), b.target_loss_pct != null ? h("span", { class: "muted" }, ` / ${fmtNum(b.target_loss_pct, 0, " %")}`) : null]),
         h("td", null, days != null ? `${days.toFixed(0)} ${t("day_short")}` : "—"),
         h("td", null, fmtNum(meanRate, 2, " %/d")),
+        this._ambientCell(b, "temp", " °C"),
+        this._ambientCell(b, "humidity", " %"),
         h("td", null, fmtDate(b.created_at, this._locale)),
       ]);
     });
     wrap.appendChild(h("div", { class: "card", style: "margin-top:16px" }, [
       h("div", { class: "table-wrap" }, h("table", null, [
         h("thead", null, h("tr", null, [h("th"), h("th", null, t("name")), h("th"), h("th", null, t("program")), h("th", null, t("reference_weight")),
-          h("th", null, t("final_loss")), h("th", null, t("duration")), h("th", null, t("mean_rate")), h("th", null, t("date"))])),
+          h("th", null, t("final_loss")), h("th", null, t("duration")), h("th", null, t("mean_rate")),
+          h("th", null, t("mean_temp")), h("th", null, t("mean_hum")), h("th", null, t("date"))])),
         h("tbody", null, rows),
       ])),
     ]));

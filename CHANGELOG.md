@@ -6,6 +6,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-08
+
+### Added
+- **Automation blueprints** in `blueprints/automation/curing_chamber/`:
+  phase / program notifications, cut power on sensor fault, care and weigh-in
+  reminder forwarding. Import URLs are listed in the README.
+- **Richer batch comparison.** A batch's detail shows the chamber
+  temperature / humidity recorded over its life under the drying curve, and
+  the History table gains *Mean T°* and *Mean RH* columns computed from the
+  recorder history of each finished batch (next to the program used).
+- **Ambient history in the panel.** The Chamber view gets a *Temperature &
+  humidity history* card (24 h / 7 d / 30 d) drawn from the recorder history
+  of the source sensors (and the core probe), with the current targets as
+  dashed lines. Websocket `state` carries the source entity ids in `sources`.
+- **Automatic housekeeping.** New *Batches & housekeeping* options step:
+  *auto-archive completed batches after N days* and *delete photos of
+  archived batches after N days* (both 0 = off by default), applied hourly.
+  Batches now record `completed_at` / `archived_at`; auto-archiving fires a
+  `batch_archived` bus event.
+- **Journal on the Lovelace card.** Batch summaries carry `last_event`
+  (kind, timestamp, note); the card shows the last journal entry per batch
+  and a one-tap **Turned** button recording it.
+- **Batch import.** `export_batch` (service and `batch/export` websocket)
+  takes `include_photos` to embed the weigh-in photos as `photo_data`; the new
+  `import_batch` service and `batch/import` websocket recreate a batch from
+  that record (weigh-ins, journal, photos), with a fresh id unless
+  `overwrite`. The panel's **Export JSON** now embeds the photos and the
+  batch list gets an **Import a batch** button.
+- **Program care reminders.** A program may carry `reminders`
+  (`kind`, `every_hours`, optional `note` and `phases`): while it runs, a
+  notification suggests that journal entry at the given interval (wall clock,
+  not while paused; a phase-scoped reminder counts from the phase start), with
+  a `reminder` bus event carrying the active batches concerned. The panel
+  editor has a *Care reminders* section, the program card shows the next
+  reminder, and the *Current phase* sensor exposes it in `next_reminder`.
+  Cheese presets turn (and wash) the products every day or two.
+- **Weigh-in reminder.** New *Weigh-in reminder after N days* option in the
+  notifications step (default 7 days, 0 disables): an active batch with no
+  weigh-in for that long gets a persistent notification (and the configured
+  notify services) once per interval, a `weigh_in_due` bus event, a
+  `weigh_in_due` flag in its summary (and the list in the *Active batches*
+  sensor attributes) and a badge on its panel card. Recording a weigh-in
+  clears it.
+- **Ineffective-actuator detection.** An actuator that runs continuously for
+  longer than the new *Ineffective-actuator detection delay* option (default
+  60 min, 0 disables) without moving its quantity by at least 0.3 °C / 2 %RH
+  raises a warning (`actuator_ineffective_<cool|heat|humidify|dehumidify>`)
+  with a targeted hint (compressor, iced evaporator, empty tank…), cleared as
+  soon as the quantity moves. New diagnostic binary sensor *Actuator
+  ineffective* listing the actuators concerned.
+
 ## [0.6.0] - 2026-10-08
 
 ### Added
@@ -176,7 +227,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/ttiot/curingChamber/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ttiot/curingChamber/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ttiot/curingChamber/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ttiot/curingChamber/compare/v0.3.1...v0.4.0

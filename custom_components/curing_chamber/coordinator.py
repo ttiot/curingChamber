@@ -45,11 +45,14 @@ from .const import (
     EVENT_CURING_CHAMBER,
     EVENT_TYPE_ALERT_CLEARED,
     EVENT_TYPE_ALERT_RAISED,
+    EVENT_TYPE_BATCH_ARCHIVED,
     EVENT_TYPE_BATCH_COMPLETED,
     EVENT_TYPE_BATCH_EVENT,
     EVENT_TYPE_MANUAL_ACTION,
     EVENT_TYPE_PHASE_CHANGED,
     EVENT_TYPE_PROGRAM_COMPLETED,
+    EVENT_TYPE_REMINDER,
+    EVENT_TYPE_WEIGH_IN_DUE,
     PHOTO_STORAGE_DIR,
     PHOTO_URL_BASE,
     PHOTO_WWW_SUBDIR,
@@ -88,6 +91,20 @@ _ACTUATOR_CONF = {
 }
 
 
+BATCH_EXPORT_FORMAT = "curing_chamber/batch"
+
+
+def _opt_text(value: object) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _opt_number(value: object) -> float | None:
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 def _photo_bytes(photo: str) -> bytes | None:
     """Decode a weigh-in photo supplied as a data URL, base64 or a local path."""
     if not photo:
@@ -120,6 +137,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=tick),
         )
         self.regulation = RegulationEngine(start=dt_util.utcnow().timestamp())
+        self._last_housekeeping = 0.0
         self.program = ProgramEngine()
         self.store = CuringChamberStore(hass, entry.entry_id)
         self._temp_filter = SensorFilter()
@@ -261,8 +279,12 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         program_events = self.program.tick(now, weight=inputs.weight, core_temp=inputs.product_temp)
         for event in program_events:
             self._handle_program_event(event, inputs)
+        for due in self.program.due_reminders(now):
+            self._handle_reminder(due)
 
         self._check_batch_completion(now)
+        self._check_weigh_in_reminders(now)
+        await self._async_housekeeping(now)
 
         outputs = self.regulation.tick(inputs, reg_config, now)
         await self._apply_commands(outputs)
@@ -280,7 +302,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
             loss = batch_engine.current_loss_pct(batch)
             if loss is not None and loss >= batch.target_loss_pct:
-                batch.status = BatchStatus.COMPLETED
+                batch.set_status(BatchStatus.COMPLETED, now)
                 changed = True
                 self._fire_event(
                     EVENT_TYPE_BATCH_COMPLETED,
@@ -289,6 +311,106 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._complete_linked_program(batch, now)
         if changed:
             self._persist_batches()
+
+    # -- Housekeeping of finished batches --------------------------------------
+
+    def _days_option(self, key: str, default: float) -> float:
+        return max(0.0, float(conf.get(self.entry, key, default))) * 86400.0
+
+    async def _async_housekeeping(self, now: float) -> None:
+        """Archive old completed batches and purge photos of old archived ones.
+
+        Runs at most once an hour. Both behaviours are off by default
+        (``auto_archive_days`` / ``purge_photos_days`` = 0).
+        """
+        if now - self._last_housekeeping < 3600.0:
+            return
+        self._last_housekeeping = now
+        archive_after = self._days_option(
+            conf.CONF_AUTO_ARCHIVE_DAYS, conf.DEFAULT_AUTO_ARCHIVE_DAYS
+        )
+        purge_after = self._days_option(conf.CONF_PURGE_PHOTOS_DAYS, conf.DEFAULT_PURGE_PHOTOS_DAYS)
+        changed = False
+        for batch in self.batches.values():
+            if archive_after > 0 and batch.status is BatchStatus.COMPLETED:
+                latest = batch.latest_sample
+                since = batch.completed_at or (latest.timestamp if latest else batch.created_at)
+                if now - since >= archive_after:
+                    batch.set_status(BatchStatus.ARCHIVED, now)
+                    changed = True
+                    _LOGGER.info("%s: batch %s auto-archived", self.chamber_name, batch.id)
+                    self._fire_event(
+                        EVENT_TYPE_BATCH_ARCHIVED, {"batch_id": batch.id, "name": batch.name}
+                    )
+            if purge_after > 0 and batch.status is BatchStatus.ARCHIVED:
+                since = batch.archived_at or batch.created_at
+                if now - since < purge_after:
+                    continue
+                for index, sample in enumerate(batch.samples):
+                    if sample.photo_url:
+                        await self._delete_photo(batch.id, sample.photo_url)
+                        batch.samples[index] = dataclasses.replace(sample, photo_url=None)
+                        changed = True
+        if changed:
+            self._persist_batches()
+
+    # -- Weigh-in reminders --------------------------------------------------
+
+    @property
+    def weigh_in_reminder_seconds(self) -> float:
+        days = float(
+            conf.get(
+                self.entry, conf.CONF_WEIGH_IN_REMINDER_DAYS, conf.DEFAULT_WEIGH_IN_REMINDER_DAYS
+            )
+        )
+        return max(0.0, days) * 86400.0
+
+    def _weigh_in_due(self, batch: Batch, now: float) -> bool:
+        """True when an active batch has gone without a weigh-in for too long."""
+        interval = self.weigh_in_reminder_seconds
+        if interval <= 0 or batch.status is not BatchStatus.ACTIVE:
+            return False
+        latest = batch.latest_sample
+        last = latest.timestamp if latest else batch.created_at
+        return now - last >= interval
+
+    def _check_weigh_in_reminders(self, now: float) -> None:
+        """Notify once per interval for each batch whose weigh-in is overdue."""
+        interval = self.weigh_in_reminder_seconds
+        reminders = self.store.weigh_in_reminders
+        changed = False
+        for batch in self.batches.values():
+            notif_id = f"{DOMAIN}_{self.entry.entry_id}_weigh_in_{batch.id}"
+            if not self._weigh_in_due(batch, now):
+                if reminders.pop(batch.id, None) is not None:
+                    changed = True
+                    persistent_notification.async_dismiss(self.hass, notif_id)
+                continue
+            last_sent = reminders.get(batch.id)
+            if last_sent is not None and now - last_sent < interval:
+                continue
+            latest = batch.latest_sample
+            since = latest.timestamp if latest else batch.created_at
+            days = int((now - since) // 86400)
+            reminders[batch.id] = now
+            changed = True
+            language = self.hass.config.language
+            body = messages.batch_message("weigh_in_due", language, batch=batch.name, days=days)
+            title = f"{messages.title(language)} — {self.chamber_name}"
+            persistent_notification.async_create(
+                self.hass, body, title=title, notification_id=notif_id
+            )
+            for service in conf.get(self.entry, conf.CONF_NOTIFY_SERVICES, []) or []:
+                self._call_notify_service(service, title, body)
+            self._fire_event(
+                EVENT_TYPE_WEIGH_IN_DUE, {"batch_id": batch.id, "name": batch.name, "days": days}
+            )
+        # Forget batches that no longer exist.
+        for batch_id in [b for b in reminders if b not in self.batches]:
+            reminders.pop(batch_id)
+            changed = True
+        if changed:
+            self.store.async_save()
 
     def _complete_linked_program(self, batch: Batch, now: float) -> None:
         """End the running program when the batch that drives it is done.
@@ -510,6 +632,14 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 conf.get(e, conf.CONF_CASE_HARDENING_RATE, conf.DEFAULT_CASE_HARDENING_RATE)
             ),
             core_temp_max=float(conf.get(e, conf.CONF_CORE_TEMP_MAX, conf.DEFAULT_CORE_TEMP_MAX)),
+            actuator_ineffective_seconds=float(
+                conf.get(
+                    e,
+                    conf.CONF_ACTUATOR_INEFFECTIVE_MINUTES,
+                    conf.DEFAULT_ACTUATOR_INEFFECTIVE_MINUTES,
+                )
+            )
+            * 60.0,
             condensation_margin=float(
                 conf.get(
                     e,
@@ -657,6 +787,44 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             body = messages.program_message("phase_ended", language, phase=event.phase_name)
         title = f"{messages.title(language)} — {self.chamber_name}"
         persistent_notification.async_create(self.hass, body, title=title)
+
+    def _handle_reminder(self, due: Any) -> None:
+        """Notify a program care reminder and point at the batches concerned."""
+        language = self.hass.config.language
+        program = self.program.program
+        program_name = program.name if program else ""
+        action = messages.reminder_action(due.reminder.kind, due.reminder.note, language)
+        body = messages.program_message(
+            "reminder", language, program=program_name, phase=due.phase_name, action=action
+        )
+        title = f"{messages.title(language)} — {self.chamber_name}"
+        notif_id = f"{DOMAIN}_{self.entry.entry_id}_reminder_{due.index}"
+        persistent_notification.async_create(self.hass, body, title=title, notification_id=notif_id)
+        for service in conf.get(self.entry, conf.CONF_NOTIFY_SERVICES, []) or []:
+            self._call_notify_service(service, title, body)
+        program_id = self.program.state.program_id
+        batch_ids = [
+            b.id
+            for b in self.batches.values()
+            if b.status is BatchStatus.ACTIVE and (b.program_id == program_id or not b.program_id)
+        ]
+        self._fire_event(
+            EVENT_TYPE_REMINDER,
+            {
+                "kind": due.reminder.kind,
+                "note": due.reminder.note,
+                "program": program_name,
+                "phase": due.phase_name,
+                "batch_ids": batch_ids,
+            },
+        )
+
+    def _next_reminder(self, now: float) -> dict[str, Any] | None:
+        nxt = self.program.next_reminder(now)
+        if nxt is None:
+            return None
+        reminder, remaining = nxt
+        return {"kind": reminder.kind, "note": reminder.note, "due_in": remaining}
 
     @callback
     def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
@@ -908,7 +1076,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now = dt_util.utcnow().timestamp()
         program = self.find_program(batch.program_id) if batch.program_id else None
         return {
-            "format": "curing_chamber/batch",
+            "format": BATCH_EXPORT_FORMAT,
             "version": 1,
             "exported_at": now,
             "chamber": self.chamber_name,
@@ -916,6 +1084,97 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "summary": self._batch_summary(batch, now),
             "program": program.to_dict() if program else None,
         }
+
+    async def async_export_batch(
+        self, batch_id: str, *, include_photos: bool = False
+    ) -> dict[str, Any]:
+        """Like :meth:`export_batch`; with ``include_photos`` the weigh-in photos
+        are embedded as ``photo_data`` data URLs so the record is self-contained."""
+        payload = self.export_batch(batch_id)
+        if not include_photos:
+            return payload
+        samples = payload["batch"]["samples"]
+
+        def _read_all() -> list[str | None]:
+            out: list[str | None] = []
+            for sample in samples:
+                url = sample.get("photo_url")
+                prefix = f"{PHOTO_URL_BASE}/{self.entry.entry_id}/{batch_id}/"
+                if not url or not url.startswith(prefix):
+                    out.append(None)
+                    continue
+                filename = url.rsplit("/", 1)[-1]
+                if not _SAFE_NAME.fullmatch(filename):
+                    out.append(None)
+                    continue
+                try:
+                    with open(self.photo_path(batch_id, filename), "rb") as handle:
+                        data = base64.b64encode(handle.read()).decode()
+                except OSError:
+                    out.append(None)
+                    continue
+                out.append(f"data:image/jpeg;base64,{data}")
+            return out
+
+        embedded = await self.hass.async_add_executor_job(_read_all)
+        for sample, data in zip(samples, embedded, strict=True):
+            if data is not None:
+                sample["photo_data"] = data
+        return payload
+
+    async def async_import_batch(
+        self, payload: dict[str, Any], *, overwrite: bool = False
+    ) -> Batch:
+        """Create a batch from an export payload (or a bare batch object).
+
+        Weigh-ins, journal and embedded photos (``photo_data``) are restored;
+        foreign ``photo_url`` values are dropped. An existing id gets a fresh
+        one unless ``overwrite``. Raises ``ValueError`` on an invalid payload.
+        """
+        raw = payload.get("batch") if isinstance(payload.get("batch"), dict) else payload
+        if not isinstance(raw, dict) or not str(raw.get("name") or "").strip():
+            raise ValueError("batch payload needs a name")
+        samples_raw = raw.get("samples") or []
+        events_raw = raw.get("events") or []
+        if not isinstance(samples_raw, list) or not isinstance(events_raw, list):
+            raise ValueError("'samples' and 'events' must be lists")
+        try:
+            samples = [WeightSample.from_dict({**s, "photo_url": None}) for s in samples_raw]
+            events = [BatchEvent.from_dict(e) for e in events_raw]
+            status = BatchStatus(str(raw.get("status") or "active"))
+        except (TypeError, ValueError, AttributeError) as err:
+            raise ValueError(f"invalid batch payload: {err}") from err
+        requested = slugify(str(raw.get("id") or "")) or None
+        if requested and requested in self.batches and overwrite:
+            await self.async_delete_batch(requested)
+        batch_id = (
+            requested
+            if requested and requested not in self.batches
+            else self._new_batch_id(str(raw["name"]))
+        )
+        batch = Batch(
+            id=batch_id,
+            name=str(raw["name"]).strip(),
+            product=_opt_text(raw.get("product")),
+            program_id=_opt_text(raw.get("program_id")),
+            reference_weight=_opt_number(raw.get("reference_weight")),
+            target_loss_pct=_opt_number(raw.get("target_loss_pct")),
+            created_at=_opt_number(raw.get("created_at")) or dt_util.utcnow().timestamp(),
+            status=status,
+        )
+        for sample, source in zip(samples, samples_raw, strict=True):
+            photo = source.get("photo_data") if isinstance(source, dict) else None
+            url = await self._save_photo(batch_id, sample.timestamp, photo) if photo else None
+            batch.add_sample(dataclasses.replace(sample, photo_url=url))
+        for event in events:
+            batch.add_event(event)
+        self.batches[batch_id] = batch
+        if self.store.reference_batch_id is None and status is BatchStatus.ACTIVE:
+            self.store.set_reference_batch(batch_id)
+        self._last_weight = None
+        self._persist_batches()
+        await self.async_refresh()
+        return batch
 
     async def async_record_weight(
         self,
@@ -966,10 +1225,11 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if batch is None:
             raise ValueError(f"Unknown batch '{batch_id}'")
         was_active = batch.status is BatchStatus.ACTIVE
-        batch.status = status
+        now = dt_util.utcnow().timestamp()
+        batch.set_status(status, now)
         self._persist_batches()
         if was_active and status is not BatchStatus.ACTIVE:
-            self._complete_linked_program(batch, dt_util.utcnow().timestamp())
+            self._complete_linked_program(batch, now)
         await self.async_refresh()
 
     async def async_set_batch_status(self, batch_id: str, status: BatchStatus) -> None:
@@ -1068,10 +1328,21 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "drying_rate": batch_engine.drying_rate_pct_per_day(batch),
             "eta": batch_engine.estimate_eta(batch, now),
             "eta_model": batch_engine.eta_model(batch),
+            "weigh_in_due": self._weigh_in_due(batch, now),
             "created_at": batch.created_at,
+            "completed_at": batch.completed_at,
             "sample_count": len(batch.samples),
             "event_count": len(batch.events),
             "last_weigh_in": latest.timestamp if latest else None,
+            "last_event": (
+                {
+                    "timestamp": batch.events[-1].timestamp,
+                    "kind": batch.events[-1].kind,
+                    "note": batch.events[-1].note,
+                }
+                if batch.events
+                else None
+            ),
             "last_photo_url": next(
                 (s.photo_url for s in reversed(batch.samples) if s.photo_url), None
             ),
@@ -1161,6 +1432,8 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "phase_target_temp": data.get("phase_target_temp"),
                 "phase_target_humidity": data.get("phase_target_humidity"),
                 "ramp_remaining": data.get("ramp_remaining"),
+                "next_reminder": data.get("next_reminder"),
+                "reminders": [r.to_dict() for r in program.reminders] if program else [],
                 "started_at": state.started_at,
                 "phase_started_at": state.phase_started_at,
                 "phases": [p.to_dict() for p in program.phases] if program else [],
@@ -1174,6 +1447,11 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "reference_batch_id": data.get("reference_batch_id"),
             "active_batch_count": data.get("active_batch_count", 0),
             "batches": data.get("batches") or [],
+            "sources": {
+                "temp": conf.get(self.entry, conf.CONF_TEMP_SENSOR),
+                "humidity": conf.get(self.entry, conf.CONF_HUMIDITY_SENSOR),
+                "core": conf.get(self.entry, conf.CONF_PRODUCT_TEMP_SENSOR),
+            },
             "entities": {
                 "regulation_switch": entity_id("switch", "switch_regulation"),
                 "maintenance_switch": entity_id("switch", "switch_maintenance"),
@@ -1236,6 +1514,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "batches": batches,
             "reference_batch_id": ref_id,
             "active_batch_count": active_batches,
+            "weigh_in_due": [b["id"] for b in batches if b.get("weigh_in_due")],
             "reference_batch_loss_pct": ref_summary["loss_pct"] if ref_summary else None,
             "reference_batch_eta": (
                 dt_util.utc_from_timestamp(ref_summary["eta"])
@@ -1249,6 +1528,7 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "phase_target_temp": self.program.active_targets()[0],
             "phase_target_humidity": self.program.active_targets()[1],
             "ramp_remaining": self.program.ramp_remaining(now),
+            "next_reminder": self._next_reminder(now),
             "active_alerts": sorted(self._active_alerts),
             "alert_details": dict(self._alert_details),
             "counters": dict(self.store.counters),
