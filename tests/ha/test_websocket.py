@@ -115,6 +115,49 @@ async def test_subscribe_pushes_live_state(
     assert "samples" not in pushed[-1]["batches"][0]
 
 
+async def test_weigh_in_conditions(
+    hass: HomeAssistant, config_entry, seed_states, hass_ws_client
+) -> None:
+    await _setup(hass, config_entry, seed_states)
+    client = await hass_ws_client(hass)
+    entry_id = config_entry.entry_id
+    batch = await _create_batch(client, entry_id)
+
+    # Backdated weigh-in: nothing is guessed from the live sensors.
+    msg = await _call(
+        client, "weigh_in", entry_id=entry_id, batch_id=batch["id"], weight=990.0, timestamp=1.0
+    )
+    assert msg["success"], msg
+    assert msg["result"]["samples"][0]["temperature"] is None
+    assert msg["result"]["samples"][0]["humidity"] is None
+
+    # Hand-entered conditions are kept as given.
+    msg = await _call(
+        client,
+        "weigh_in",
+        entry_id=entry_id,
+        batch_id=batch["id"],
+        weight=980.0,
+        temperature=10.2,
+        humidity=88,
+    )
+    assert msg["success"], msg
+    assert msg["result"]["samples"][1]["temperature"] == 10.2
+    assert msg["result"]["samples"][1]["humidity"] == 88.0
+
+    # Taken now with nothing given: snapshot of the chamber sensors.
+    msg = await _call(client, "weigh_in", entry_id=entry_id, batch_id=batch["id"], weight=970.0)
+    assert msg["success"], msg
+    assert msg["result"]["samples"][2]["temperature"] == 13.0
+    assert msg["result"]["samples"][2]["humidity"] == 75.0
+
+    # Out-of-range humidity is rejected by the schema.
+    msg = await _call(
+        client, "weigh_in", entry_id=entry_id, batch_id=batch["id"], weight=960.0, humidity=140
+    )
+    assert not msg["success"]
+
+
 async def test_subscribe_chambers_pushes_on_load_and_unload(
     hass: HomeAssistant, config_entry, seed_states, hass_ws_client
 ) -> None:

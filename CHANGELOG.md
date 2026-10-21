@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Chamber conditions on weigh-ins.** A weigh-in can carry the chamber
+  temperature (°C) and relative humidity (%) observed when it was taken, for
+  chambers with no sensor where the values are read off a thermo-hygrometer by
+  hand: new optional `temperature` / `humidity` fields on the `record_weight`
+  action and the `weigh_in` websocket command, two inputs in the panel's
+  weigh-in form, two columns in the history table and in the CSV export. On a
+  weigh-in taken now with the fields left blank, the current (filtered)
+  sensor readings are snapshotted instead, so a batch keeps the context of
+  its drying curve long after the recorder has purged the history; a
+  backdated weigh-in is never filled from live sensors. These values are
+  context only and never feed the regulation. Stored batches and
+  `export_batch` / `import_batch` payloads without the fields load unchanged.
+
 ## [0.7.1] - 2026-10-21
 
 ### Security

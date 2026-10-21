@@ -20,14 +20,27 @@ def test_roundtrip_preserves_batch() -> None:
     )
     photo = "/local/curing_chamber/c/1.jpg"
     b.add_sample(WeightSample(timestamp=0.0, weight=1200.0, note="start"))
-    b.add_sample(WeightSample(timestamp=DAY, weight=1150.0, photo_url=photo))
+    b.add_sample(
+        WeightSample(timestamp=DAY, weight=1150.0, photo_url=photo, temperature=12.5, humidity=78.0)
+    )
 
     restored = Batch.from_dict(b.to_dict())
 
     assert restored == b
     assert restored.status is BatchStatus.ACTIVE
     assert restored.samples[1].photo_url == photo
+    assert restored.samples[1].temperature == 12.5
+    assert restored.samples[1].humidity == 78.0
     assert restored.latest_weight == 1150.0
+
+
+def test_from_dict_without_conditions_is_backward_compatible() -> None:
+    """Stores written before weigh-in conditions existed still load."""
+    sample = WeightSample.from_dict({"timestamp": 0.0, "weight": 1000.0, "note": None})
+    assert sample.temperature is None
+    assert sample.humidity is None
+    junk = WeightSample.from_dict({"timestamp": 0.0, "weight": 1.0, "humidity": "x"})
+    assert junk.humidity is None
 
 
 def test_from_dict_sorts_samples_by_time() -> None:

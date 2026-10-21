@@ -117,6 +117,29 @@ async def test_create_batch_and_record_weight(
     assert summary["last_weight"] == 900.0
 
 
+async def test_record_weight_conditions(hass: HomeAssistant, config_entry, seed_states) -> None:
+    """Explicit conditions win; omitted ones on a weigh-in taken now come from the sensors."""
+    coordinator = await _setup(hass, config_entry, seed_states)
+    await _create_batch(hass)
+    batch_id = next(iter(coordinator.batches))
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RECORD_WEIGHT,
+        {"batch_id": batch_id, "weight": 950.0, "temperature": 11.5, "humidity": 82},
+        blocking=True,
+    )
+    await hass.services.async_call(
+        DOMAIN, SERVICE_RECORD_WEIGHT, {"batch_id": batch_id, "weight": 940.0}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    manual, auto = coordinator.batches[batch_id].samples
+    assert (manual.temperature, manual.humidity) == (11.5, 82.0)
+    # seed_states seeds 13.0 °C / 75 % on the chamber sensors.
+    assert (auto.temperature, auto.humidity) == (13.0, 75.0)
+
+
 async def test_record_weight_with_photo(hass: HomeAssistant, config_entry, seed_states) -> None:
     coordinator = await _setup(hass, config_entry, seed_states)
     await _create_batch(hass)

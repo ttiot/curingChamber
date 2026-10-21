@@ -1188,14 +1188,38 @@ class CuringChamberCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         timestamp: float | None = None,
         note: str | None = None,
         photo: str | None = None,
+        temperature: float | None = None,
+        humidity: float | None = None,
     ) -> None:
-        """Append a weigh-in (with optional note/photo) to a batch."""
+        """Append a weigh-in (with optional note/photo/conditions) to a batch.
+
+        ``temperature`` / ``humidity`` are the chamber conditions at the
+        weigh-in. When they are not given and the weigh-in is taken now, the
+        current (filtered) sensor readings are snapshotted instead, so the
+        drying curve keeps its context long after the recorder has purged the
+        history. A backdated weigh-in is never filled from live sensors.
+        """
         batch = self.batches.get(batch_id)
         if batch is None:
             raise ValueError(f"Unknown batch '{batch_id}'")
         ts = timestamp if timestamp is not None else dt_util.utcnow().timestamp()
+        if timestamp is None:
+            data = self.data or {}
+            if temperature is None:
+                temperature = data.get("temp")
+            if humidity is None:
+                humidity = data.get("humidity")
         photo_url = await self._save_photo(batch_id, ts, photo) if photo else None
-        batch.add_sample(WeightSample(timestamp=ts, weight=weight, note=note, photo_url=photo_url))
+        batch.add_sample(
+            WeightSample(
+                timestamp=ts,
+                weight=weight,
+                note=note,
+                photo_url=photo_url,
+                temperature=temperature,
+                humidity=humidity,
+            )
+        )
         self._last_weight = None
         self._persist_batches()
         await self.async_refresh()

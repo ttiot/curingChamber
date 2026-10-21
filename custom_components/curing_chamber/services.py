@@ -144,6 +144,8 @@ _RECORD_WEIGHT_SCHEMA = vol.Schema(
         vol.Optional(_ATTR_TIMESTAMP): cv.datetime,
         vol.Optional(_ATTR_NOTE): cv.string,
         vol.Optional(_ATTR_PHOTO): cv.string,
+        vol.Optional(_ATTR_TEMPERATURE): vol.Coerce(float),
+        vol.Optional(_ATTR_HUMIDITY): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
     }
 )
 _BATCH_ID_SCHEMA = vol.Schema({**_TARGET, vol.Required(_ATTR_BATCH_ID): cv.string})
@@ -381,6 +383,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
                     timestamp=timestamp,
                     note=call.data.get(_ATTR_NOTE),
                     photo=photo,
+                    temperature=call.data.get(_ATTR_TEMPERATURE),
+                    humidity=call.data.get(_ATTR_HUMIDITY),
                 )
             except ValueError as err:
                 raise HomeAssistantError(str(err)) from err

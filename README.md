@@ -304,9 +304,19 @@ the same as **Export** / **Import** buttons working on `.json` files.
 
 A **batch** is one product curing in the chamber, with its own reference weight,
 target weight loss and a **history of weigh-ins**. Weigh-ins can come from a
-scale or be entered by hand — **no scale required** — optionally with a note and
-a photo. From the weigh-in history the integration derives each batch's current
-weight loss, drying rate and a **predicted completion date (ETA)**.
+scale or be entered by hand — **no scale required** — optionally with a note, a
+photo and the **chamber conditions** (temperature and humidity) at that moment.
+From the weigh-in history the integration derives each batch's current weight
+loss, drying rate and a **predicted completion date (ETA)**.
+
+**Conditions without sensors.** A chamber with no temperature / humidity sensor
+(a passive cellar, a fridge with a dial thermo-hygrometer) can still keep track
+of its conditions: type them in with each weigh-in (`temperature` in °C,
+`humidity` in %). With sensors, leaving the fields blank on a weigh-in taken
+now records the current readings, so the drying curve keeps its context well
+after the recorder's retention has expired. A backdated weigh-in is never filled
+from live sensors. These values are context for the batch only — they never
+drive the regulation.
 
 **ETA model.** With two weigh-ins the ETA is a straight-line extrapolation of
 the drying rate. From three weigh-ins on, an exponential drying model
@@ -366,6 +376,8 @@ data:
   batch_id: coppa_1
   weight: 1080
   note: "day 12"
+  temperature: 12.5             # optional, °C — read off a thermo-hygrometer
+  humidity: 80                  # optional, % RH — omitted: current sensor values
   photo: "/config/www/photos/coppa_day12.jpg"   # data: URL, base64 or a local file
 ```
 
