@@ -14,6 +14,7 @@ from custom_components.curing_chamber.const import (
     STORAGE_KEY_TEMPLATE,
     STORAGE_VERSION,
 )
+from custom_components.curing_chamber.coordinator import _photo_bytes
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
@@ -135,3 +136,15 @@ async def test_panel_and_card_are_registered_with_version(
         assert await hass.config_entries.async_unload(config_entry.entry_id)
         await hass.async_block_till_done()
         remove_panel.assert_called_once_with(hass, "curing-chamber", warn_if_unknown=False)
+
+
+async def test_photo_bytes_decodes_inline_data_only(tmp_path) -> None:
+    """The shared decoder understands data URLs and base64, never a file path."""
+    secret = tmp_path / "secrets.yaml"
+    secret.write_text("api_key: hunter2\n", encoding="utf-8")
+    assert _photo_bytes(str(secret)) is None
+    assert _photo_bytes(PHOTO) == JPEG
+    assert _photo_bytes(base64.b64encode(JPEG).decode()) == JPEG
+    assert _photo_bytes("data:image/jpeg;base64,!!!") is None
+    assert _photo_bytes("not base64 at all") is None
+    assert _photo_bytes("") is None

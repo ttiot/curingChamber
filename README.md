@@ -78,10 +78,16 @@ diagnostics, and full FR/EN translations.
 
 ## Installation (HACS)
 
-1. In HACS → *Integrations* → the three-dots menu → **Custom repositories**.
-2. Add `https://github.com/ttiot/curingchamber` with category **Integration**.
-3. Install **Curing Chamber**, then restart Home Assistant.
-4. *Settings → Devices & Services → Add Integration → Curing Chamber*.
+[![Open your Home Assistant instance and show this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ttiot&repository=curingchamber&category=integration)
+
+1. In HACS, search for **Curing Chamber** and download it (or use the button
+   above).
+2. Restart Home Assistant.
+3. *Settings → Devices & Services → Add Integration → Curing Chamber*.
+
+Not listed in your HACS yet? Add `https://github.com/ttiot/curingchamber` as a
+custom repository (HACS → three-dots menu → **Custom repositories**, category
+**Integration**) and download it from there.
 
 Manual install: copy `custom_components/curing_chamber/` into your HA
 `config/custom_components/` folder and restart.
@@ -360,14 +366,17 @@ data:
   batch_id: coppa_1
   weight: 1080
   note: "day 12"
-  photo: "/config/www/photos/coppa_day12.jpg"   # path, base64 or data: URL
+  photo: "/config/www/photos/coppa_day12.jpg"   # data: URL, base64 or a local file
 ```
 
 Photos are stored **privately** under
 `<config>/.storage/curing_chamber/photos/<entry_id>/<batch_id>/` and served only to
 logged-in users at `/api/curing_chamber/photo/…` (the panel and card sign the
 URL before displaying it). Photos saved by earlier versions under the public
-`www/` folder are moved there automatically on startup. Other batch services:
+`www/` folder are moved there automatically on startup. A file path is only
+honoured by this action (never by the panel or the websocket API) and must lie
+under Home Assistant's `allowlist_external_dirs` (`<config>/www` and the media
+folders by default), the same rule as `camera.snapshot`. Other batch services:
 `set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`,
 `add_batch_event`, `delete_batch_event`, `export_batch`.
 
@@ -628,10 +637,16 @@ d'action manuelle en mode dégradé, diagnostics, traductions FR/EN complètes.
 
 ## Installation (HACS)
 
-1. HACS → *Intégrations* → menu ⋮ → **Dépôts personnalisés**.
-2. Ajoutez `https://github.com/ttiot/curingchamber`, catégorie **Intégration**.
-3. Installez **Curing Chamber**, puis redémarrez Home Assistant.
-4. *Paramètres → Appareils et services → Ajouter une intégration → Curing Chamber*.
+[![Ouvrir votre instance Home Assistant et afficher ce dépôt dans HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ttiot&repository=curingchamber&category=integration)
+
+1. Dans HACS, recherchez **Curing Chamber** et téléchargez-le (ou utilisez le
+   bouton ci-dessus).
+2. Redémarrez Home Assistant.
+3. *Paramètres → Appareils et services → Ajouter une intégration → Curing Chamber*.
+
+Pas encore visible dans votre HACS ? Ajoutez `https://github.com/ttiot/curingchamber`
+en dépôt personnalisé (HACS → menu ⋮ → **Dépôts personnalisés**, catégorie
+**Intégration**) puis téléchargez-le depuis là.
 
 Installation manuelle : copiez `custom_components/curing_chamber/` dans le
 dossier `config/custom_components/` de HA et redémarrez.
@@ -853,7 +868,7 @@ data:
   batch_id: coppa_1
   weight: 1080
   note: "jour 12"
-  photo: "/config/www/photos/coppa_jour12.jpg"   # chemin, base64 ou URL data:
+  photo: "/config/www/photos/coppa_jour12.jpg"   # URL data:, base64 ou fichier local
 ```
 
 Les photos sont stockées **en privé** sous
@@ -861,9 +876,12 @@ Les photos sont stockées **en privé** sous
 uniquement aux utilisateurs connectés via `/api/curing_chamber/photo/…` (le
 panneau et la carte signent l'URL avant affichage). Les photos enregistrées par
 les versions précédentes dans le dossier public `www/` y sont déplacées
-automatiquement au démarrage. Autres services de lot : `set_reference_batch`,
-`complete_batch`, `archive_batch`, `delete_batch`, `add_batch_event`,
-`delete_batch_event`, `export_batch`.
+automatiquement au démarrage. Un chemin de fichier n'est accepté que par ce
+service (jamais par le panneau ni l'API websocket) et doit se trouver sous
+`allowlist_external_dirs` de Home Assistant (`<config>/www` et les dossiers
+média par défaut), même règle que `camera.snapshot`. Autres services de lot :
+`set_reference_batch`, `complete_batch`, `archive_batch`, `delete_batch`,
+`add_batch_event`, `delete_batch_event`, `export_batch`.
 
 **Saisir un poids depuis l'interface.** Chaque enceinte expose une entité
 `number` **Poids manuel** (`number.<enceinte>_manual_weight`). Saisissez une

@@ -496,3 +496,46 @@ async def test_batch_export_with_photos_and_import(
     msg = await _call(client, "batch/import", entry_id=entry_id, batch={"batch": {"samples": "x"}})
     assert not msg["success"]
     assert msg["error"]["code"] == "invalid_format"
+
+
+async def test_websocket_photos_never_read_local_files(
+    hass: HomeAssistant, config_entry, seed_states, hass_ws_client
+) -> None:
+    """Over the websocket a photo is inline data only, even for an allowlisted path.
+
+    Every logged-in user can call these commands, so a path must never be opened
+    and copied into the photo store (where ``batch/export`` would hand it back).
+    """
+    coordinator = await _setup(hass, config_entry, seed_states)
+    client = await hass_ws_client(hass)
+    entry_id = config_entry.entry_id
+    secret = hass.config.path("secrets.yaml")
+    with open(secret, "w", encoding="utf-8") as handle:
+        handle.write("api_key: hunter2\n")
+    hass.config.allowlist_external_dirs = {os.path.realpath(hass.config.config_dir)}
+    batch = await _create_batch(client, entry_id)
+
+    msg = await _call(
+        client, "weigh_in", entry_id=entry_id, batch_id=batch["id"], weight=980.0, photo=secret
+    )
+    assert msg["success"], msg
+    assert msg["result"]["samples"][0]["photo_url"] is None
+
+    record = {
+        "batch": {
+            "name": "Copy",
+            "samples": [{"timestamp": 1.0, "weight": 900.0, "photo_data": secret}],
+        }
+    }
+    msg = await _call(client, "batch/import", entry_id=entry_id, batch=record)
+    assert msg["success"], msg
+    assert msg["result"]["samples"][0]["photo_url"] is None
+
+    for batch_id in (batch["id"], msg["result"]["id"]):
+        msg = await _call(
+            client, "batch/export", entry_id=entry_id, batch_id=batch_id, include_photos=True
+        )
+        assert msg["success"], msg
+        assert "photo_data" not in msg["result"]["batch"]["samples"][0]
+    assert not os.path.exists(hass.config.path(".storage", DOMAIN, "photos"))
+    assert coordinator.batches[batch["id"]].samples[0].photo_url is None

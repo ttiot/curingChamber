@@ -332,6 +332,7 @@ async def ws_batch_delete(
         vol.Required("weight"): vol.All(vol.Coerce(float), vol.Range(min=0)),
         vol.Optional("timestamp"): vol.Any(None, vol.Coerce(float)),
         vol.Optional("note"): vol.Any(None, str),
+        # Inline data only (data URL / base64); a file path is never read here.
         vol.Optional("photo"): vol.Any(None, str),
     }
 )
