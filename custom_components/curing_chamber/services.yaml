@@ -355,7 +355,8 @@ record_weight:
   name: Record weigh-in
   description: >-
     Add a weigh-in to a batch (works without a scale). Optionally attach a
-    timestamp, a note and a photo.
+    timestamp, a note, a photo and the chamber conditions (temperature and
+    humidity) read at the weigh-in.
   fields:
     device_id:
       name: Chamber
@@ -398,6 +399,30 @@ record_weight:
         users at /api/curing_chamber/photo/...
       selector:
         text:
+    temperature:
+      name: Temperature
+      description: >-
+        Chamber temperature at the weigh-in (°C), for chambers without a
+        sensor. Omitted on a weigh-in taken now, the current sensor reading is
+        recorded instead when one is available.
+      selector:
+        number:
+          min: -10
+          max: 40
+          step: 0.1
+          unit_of_measurement: "°C"
+    humidity:
+      name: Humidity
+      description: >-
+        Chamber relative humidity at the weigh-in (%), for chambers without a
+        sensor. Omitted on a weigh-in taken now, the current sensor reading is
+        recorded instead when one is available.
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
 
 set_reference_batch:
   name: Set reference batch

@@ -154,6 +154,7 @@ const STR = {
     record: "Record",
     recorded: "Weigh-in recorded.",
     enter_weight: "Enter a weight.",
+    conditions_hint: "Chamber conditions at the weigh-in. Left blank, the current sensor readings are recorded.",
     make_reference: "Make reference",
     complete: "Complete",
     archive: "Archive",
@@ -359,6 +360,7 @@ const STR = {
     record: "Enregistrer",
     recorded: "Pesée enregistrée.",
     enter_weight: "Saisissez un poids.",
+    conditions_hint: "Conditions de la cave au moment de la pesée. Laissées vides, les valeurs des capteurs sont enregistrées.",
     make_reference: "Définir référence",
     complete: "Terminer",
     archive: "Archiver",
@@ -1853,11 +1855,13 @@ class CuringChamberPanel extends HTMLElement {
     if (!samples.length) histCard.appendChild(h("div", { class: "muted small" }, "—"));
     else {
       histCard.appendChild(h("div", { class: "table-wrap" }, h("table", null, [
-        h("thead", null, h("tr", null, [h("th", null, t("date")), h("th", null, t("weight")), h("th", null, t("loss")), h("th", null, t("note")), h("th", null, t("photo")), h("th")])),
+        h("thead", null, h("tr", null, [h("th", null, t("date")), h("th", null, t("weight")), h("th", null, t("loss")), h("th", null, "T°"), h("th", null, "RH"), h("th", null, t("note")), h("th", null, t("photo")), h("th")])),
         h("tbody", null, samples.map((x) => h("tr", null, [
           h("td", null, fmtDateTime(x.timestamp, this._locale)),
           h("td", null, fmtNum(x.weight, 0)),
           h("td", null, ref ? fmtNum(((ref - x.weight) / ref) * 100, 1, " %") : "—"),
+          h("td", { class: "muted" }, x.temperature != null ? fmtNum(x.temperature, 1, " °C") : ""),
+          h("td", { class: "muted" }, x.humidity != null ? fmtNum(x.humidity, 0, " %") : ""),
           h("td", { class: "muted" }, x.note || ""),
           h("td", null, x.photo_url ? this._photoImg(x.photo_url, "thumb") : ""),
           h("td", null, h("button", { class: "ghost sm", title: t("delete"), onclick: async () => {
@@ -1962,14 +1966,14 @@ class CuringChamberPanel extends HTMLElement {
     if (format === "json") { downloadJson(`${base}.json`, data); return; }
     const batch = data.batch || {};
     const ref = data.summary && data.summary.reference_weight;
-    const rows = [["timestamp", "type", "kind", "weight", "loss_pct", "note", "photo_url"]];
+    const rows = [["timestamp", "type", "kind", "weight", "loss_pct", "temperature", "humidity", "note", "photo_url"]];
     const iso = (ts) => new Date(ts * 1000).toISOString();
     const lines = [];
     for (const x of batch.samples || []) {
-      lines.push({ ts: x.timestamp, row: [iso(x.timestamp), "weigh_in", "", x.weight, ref ? (((ref - x.weight) / ref) * 100).toFixed(2) : "", x.note || "", x.photo_url || ""] });
+      lines.push({ ts: x.timestamp, row: [iso(x.timestamp), "weigh_in", "", x.weight, ref ? (((ref - x.weight) / ref) * 100).toFixed(2) : "", x.temperature ?? "", x.humidity ?? "", x.note || "", x.photo_url || ""] });
     }
     for (const e of batch.events || []) {
-      lines.push({ ts: e.timestamp, row: [iso(e.timestamp), "event", e.kind, "", "", e.note || "", ""] });
+      lines.push({ ts: e.timestamp, row: [iso(e.timestamp), "event", e.kind, "", "", "", "", e.note || "", ""] });
     }
     lines.sort((a, c) => a.ts - c.ts);
     for (const l of lines) rows.push(l.row);
@@ -1988,6 +1992,8 @@ class CuringChamberPanel extends HTMLElement {
   _weighInForm(b) {
     const t = (k) => this._t(k);
     const weight = h("input", { type: "number", step: "0.1", min: "0", inputmode: "decimal" });
+    const temperature = h("input", { type: "number", step: "0.1", inputmode: "decimal", placeholder: "°C", style: "width:80px", title: t("conditions_hint") });
+    const humidity = h("input", { type: "number", step: "1", min: "0", max: "100", inputmode: "numeric", placeholder: "%", style: "width:80px", title: t("conditions_hint") });
     const note = h("input", { type: "text", placeholder: t("note_placeholder") });
     const photo = h("input", { type: "file", accept: "image/*", capture: "environment" });
     const nowBox = h("input", { type: "checkbox", checked: true });
@@ -2000,6 +2006,10 @@ class CuringChamberPanel extends HTMLElement {
         if (Number.isNaN(w)) { status.textContent = t("enter_weight"); weight.focus(); return; }
         const params = { batch_id: b.id, weight: w };
         if (note.value.trim()) params.note = note.value.trim();
+        const tv = parseFloat(temperature.value);
+        if (!Number.isNaN(tv)) params.temperature = tv;
+        const hv = parseFloat(humidity.value);
+        if (!Number.isNaN(hv)) params.humidity = hv;
         if (!nowBox.checked) {
           const ts = fromLocalInputValue(when.value);
           if (ts != null) params.timestamp = ts;
@@ -2024,6 +2034,8 @@ class CuringChamberPanel extends HTMLElement {
       h("h2", null, t("record_weigh_in")),
       h("div", { class: "form" }, [
         h("label", null, [t("weight"), weight]),
+        h("label", null, [t("temperature"), temperature]),
+        h("label", null, [t("humidity"), humidity]),
         h("label", { style: "flex:1;min-width:160px" }, [t("note"), note]),
         h("label", null, [t("photo"), photo]),
         h("label", { class: "inline" }, [nowBox, t("now")]),

@@ -334,6 +334,10 @@ async def ws_batch_delete(
         vol.Optional("note"): vol.Any(None, str),
         # Inline data only (data URL / base64); a file path is never read here.
         vol.Optional("photo"): vol.Any(None, str),
+        vol.Optional("temperature"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("humidity"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
+        ),
     }
 )
 @websocket_api.async_response
@@ -349,6 +353,8 @@ async def ws_weigh_in(
             timestamp=msg.get("timestamp"),
             note=msg.get("note") or None,
             photo=msg.get("photo") or None,
+            temperature=msg.get("temperature"),
+            humidity=msg.get("humidity"),
         )
     except ValueError as err:
         connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, str(err))

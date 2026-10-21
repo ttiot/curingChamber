@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-21
+
+### Added
+- **Chamber conditions on weigh-ins.** A weigh-in can carry the chamber
+  temperature (°C) and relative humidity (%) observed when it was taken, for
+  chambers with no sensor where the values are read off a thermo-hygrometer by
+  hand: new optional `temperature` / `humidity` fields on the `record_weight`
+  action and the `weigh_in` websocket command, two inputs in the panel's
+  weigh-in form, two columns in the history table and in the CSV export. On a
+  weigh-in taken now with the fields left blank, the current (filtered)
+  sensor readings are snapshotted instead, so a batch keeps the context of
+  its drying curve long after the recorder has purged the history; a
+  backdated weigh-in is never filled from live sensors. These values are
+  context only and never feed the regulation. Stored batches and
+  `export_batch` / `import_batch` payloads without the fields load unchanged.
+
 ## [0.7.1] - 2026-10-21
 
 ### Security
@@ -248,7 +264,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/ttiot/curingChamber/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/ttiot/curingChamber/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/ttiot/curingChamber/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ttiot/curingChamber/compare/v0.5.0...v0.6.0

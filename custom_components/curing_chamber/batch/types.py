@@ -23,12 +23,20 @@ class BatchStatus(StrEnum):
 
 @dataclass(frozen=True)
 class WeightSample:
-    """A single weigh-in: a weight at a point in time, plus optional context."""
+    """A single weigh-in: a weight at a point in time, plus optional context.
+
+    ``temperature`` (°C) and ``humidity`` (% RH) are the chamber conditions
+    observed at the weigh-in: read off a thermo-hygrometer by hand when the
+    chamber has no sensor, or snapshotted from the sensors otherwise. They are
+    context for the drying curve only and never feed the regulation.
+    """
 
     timestamp: float
     weight: float
     note: str | None = None
     photo_url: str | None = None
+    temperature: float | None = None
+    humidity: float | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -36,6 +44,8 @@ class WeightSample:
             "weight": self.weight,
             "note": self.note,
             "photo_url": self.photo_url,
+            "temperature": self.temperature,
+            "humidity": self.humidity,
         }
 
     @classmethod
@@ -45,6 +55,8 @@ class WeightSample:
             weight=float(_req_float(data.get("weight"))),
             note=_opt_str(data.get("note")),
             photo_url=_opt_str(data.get("photo_url")),
+            temperature=_opt_float(data.get("temperature")),
+            humidity=_opt_float(data.get("humidity")),
         )
 
 
