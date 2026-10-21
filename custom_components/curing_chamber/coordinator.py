@@ -106,20 +106,24 @@ def _opt_number(value: object) -> float | None:
 
 
 def _photo_bytes(photo: str) -> bytes | None:
-    """Decode a weigh-in photo supplied as a data URL, base64 or a local path."""
+    """Decode a weigh-in photo supplied inline, as a data URL or bare base64.
+
+    The value is never treated as a filesystem path: the websocket commands are
+    open to every logged-in user, so reading files here would let anyone copy
+    host files (secrets.yaml, .storage/...) into the photo store and fetch them
+    back through the export. The ``record_weight`` action resolves allowlisted
+    paths itself, in ``services.py``, before calling the coordinator.
+    """
     if not photo:
         return None
     if photo.startswith("data:"):
         _, _, encoded = photo.partition(",")
         try:
-            return base64.b64decode(encoded)
+            return base64.b64decode(encoded) or None
         except (binascii.Error, ValueError):
             return None
-    if os.path.isfile(photo):
-        with open(photo, "rb") as handle:
-            return handle.read()
     try:
-        return base64.b64decode(photo, validate=True)
+        return base64.b64decode(photo, validate=True) or None
     except (binascii.Error, ValueError):
         return None
 

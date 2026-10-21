@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+- **Weigh-in photos can no longer read arbitrary host files.** The photo
+  decoder treated any string naming an existing file as a path to copy into
+  the photo store, so any logged-in user (admin or not) could feed
+  `/config/secrets.yaml` or anything under `.storage` to the `record_weight` /
+  `import_batch` actions or the `weigh_in` / `batch/import` websocket
+  commands, then read it back with `batch/export` and `include_photos`. The
+  coordinator now only decodes inline data (data URL or base64). The
+  `record_weight` action still accepts a local file path, but checks it with
+  `hass.config.is_allowed_path` (`allowlist_external_dirs`, the rule
+  `camera.snapshot` follows) and refuses anything else; the websocket API and
+  `import_batch` never interpret a photo as a path. Reported during the HACS
+  default-catalog review (hacs/default#11574).
+
+### Changed
+- README: the HACS install section leads with the default catalog (search for
+  *Curing Chamber* in HACS or use the My Home Assistant button); adding the
+  custom repository stays as the fallback.
+
 ## [0.7.0] - 2026-10-08
 
 ### Added

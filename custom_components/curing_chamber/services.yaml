@@ -390,9 +390,12 @@ record_weight:
     photo:
       name: Photo
       description: >-
-        Optional photo as a data URL, base64 string, or a local file path;
-        stored privately under /config/.storage/curing_chamber/photos and
-        served only to logged-in users at /api/curing_chamber/photo/...
+        Optional photo as a data URL or a base64 string. This action also
+        accepts a local file path, which must lie under allowlist_external_dirs
+        (<config>/www and the media folders by default); the panel and the
+        websocket API never read files. Stored privately under
+        /config/.storage/curing_chamber/photos and served only to logged-in
+        users at /api/curing_chamber/photo/...
       selector:
         text:
 

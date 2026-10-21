@@ -143,6 +143,69 @@ async def test_record_weight_with_photo(hass: HomeAssistant, config_entry, seed_
     assert not os.path.exists(hass.config.path("www", "curing_chamber", batch_id))
 
 
+async def test_record_weight_photo_from_allowed_path(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    """The action may read a local file, but only under allowlist_external_dirs."""
+    coordinator = await _setup(hass, config_entry, seed_states)
+    await _create_batch(hass)
+    batch_id = next(iter(coordinator.batches))
+    www = hass.config.path("www")
+    os.makedirs(www)
+    photo_file = os.path.join(www, "coppa.jpg")
+    with open(photo_file, "wb") as handle:
+        handle.write(b"\xff\xd8\xff\xd9")
+    hass.config.allowlist_external_dirs = {os.path.realpath(www)}
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RECORD_WEIGHT,
+        {"batch_id": batch_id, "weight": 950.0, "photo": photo_file},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    sample = coordinator.batches[batch_id].latest_sample
+    assert sample.photo_url is not None
+    on_disk = coordinator.photo_path(batch_id, sample.photo_url.rsplit("/", 1)[-1])
+    with open(on_disk, "rb") as handle:
+        assert handle.read() == b"\xff\xd8\xff\xd9"
+
+
+async def test_record_weight_rejects_path_outside_allowlist(
+    hass: HomeAssistant, config_entry, seed_states
+) -> None:
+    """A path outside allowlist_external_dirs is refused and nothing is copied."""
+    coordinator = await _setup(hass, config_entry, seed_states)
+    await _create_batch(hass)
+    batch_id = next(iter(coordinator.batches))
+    secret = hass.config.path("secrets.yaml")
+    with open(secret, "w", encoding="utf-8") as handle:
+        handle.write("api_key: hunter2\n")
+    hass.config.allowlist_external_dirs = {os.path.realpath(hass.config.path("www"))}
+
+    with pytest.raises(HomeAssistantError, match="allowlist_external_dirs"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_RECORD_WEIGHT,
+            {"batch_id": batch_id, "weight": 950.0, "photo": secret},
+            blocking=True,
+        )
+    await hass.async_block_till_done()
+
+    assert coordinator.batches[batch_id].samples == []
+    assert not os.path.exists(hass.config.path(".storage", DOMAIN, "photos"))
+
+    # An allowed folder but a missing file is an error too, not a silent drop.
+    with pytest.raises(HomeAssistantError, match="Cannot read photo"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_RECORD_WEIGHT,
+            {"batch_id": batch_id, "weight": 950.0, "photo": hass.config.path("www", "x.jpg")},
+            blocking=True,
+        )
+
+
 async def test_set_reference_batch_drives_completion(
     hass: HomeAssistant, config_entry, seed_states
 ) -> None:

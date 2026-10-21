@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
@@ -145,6 +147,47 @@ _RECORD_WEIGHT_SCHEMA = vol.Schema(
     }
 )
 _BATCH_ID_SCHEMA = vol.Schema({**_TARGET, vol.Required(_ATTR_BATCH_ID): cv.string})
+
+
+def _is_inline_photo(photo: str) -> bool:
+    """True for a data URL or a bare base64 string (what the panel and the card send)."""
+    if photo.startswith("data:"):
+        return True
+    try:
+        base64.b64decode(photo, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return True
+
+
+async def _async_load_photo(hass: HomeAssistant, photo: str) -> str:
+    """Resolve the ``photo`` field of ``record_weight``.
+
+    Inline data is passed through untouched. Anything else is a local file
+    path: this action is the only entry point allowed to read one, and only
+    under ``allowlist_external_dirs`` (checked with ``is_allowed_path``, the
+    rule ``camera.snapshot`` follows). The file is handed to the coordinator as
+    a data URL so nothing below this layer ever opens a user-supplied path.
+    """
+    if _is_inline_photo(photo):
+        return photo
+    shown = photo if len(photo) <= 120 else f"{photo[:117]}..."
+
+    def _read() -> bytes:
+        # is_allowed_path does blocking I/O: both checks run off the event loop.
+        if not hass.config.is_allowed_path(photo):
+            raise HomeAssistantError(
+                f"Photo path '{shown}' is not under allowlist_external_dirs; "
+                "allow its folder in configuration.yaml or pass the photo as a data URL"
+            )
+        with open(photo, "rb") as handle:
+            return handle.read()
+
+    try:
+        data = await hass.async_add_executor_job(_read)
+    except OSError as err:
+        raise HomeAssistantError(f"Cannot read photo '{shown}': {err}") from err
+    return f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
 
 
 def _coordinators(hass: HomeAssistant, call: ServiceCall) -> list[CuringChamberCoordinator]:
@@ -327,6 +370,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def record_weight(call: ServiceCall) -> None:
         moment = call.data.get(_ATTR_TIMESTAMP)
         timestamp = dt_util.as_utc(moment).timestamp() if moment is not None else None
+        photo = call.data.get(_ATTR_PHOTO)
+        if photo:
+            photo = await _async_load_photo(hass, photo)
         for coordinator in _coordinators(hass, call):
             try:
                 await coordinator.async_record_weight(
@@ -334,7 +380,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
                     call.data[_ATTR_WEIGHT],
                     timestamp=timestamp,
                     note=call.data.get(_ATTR_NOTE),
-                    photo=call.data.get(_ATTR_PHOTO),
+                    photo=photo,
                 )
             except ValueError as err:
                 raise HomeAssistantError(str(err)) from err
