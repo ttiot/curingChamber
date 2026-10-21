@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-21
+
 ### Security
 - **Weigh-in photos can no longer read arbitrary host files.** The photo
   decoder treated any string naming an existing file as a path to copy into
@@ -246,7 +248,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - FR/EN translations, HACS metadata, and CI (ruff, mypy, pytest+coverage,
   hassfest, HACS validation) on Python 3.13.
 
-[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/ttiot/curingChamber/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/ttiot/curingChamber/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/ttiot/curingChamber/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ttiot/curingChamber/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ttiot/curingChamber/compare/v0.4.0...v0.5.0
